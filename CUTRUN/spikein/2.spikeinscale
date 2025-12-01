@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import sys, os, glob, subprocess
+#import pandas as pd
+from shutil import copyfile
+from subprocess import PIPE
+
+def collect_bam_and_counts(base_dir='.'):
+    results = []
+    index = 0
+    #print(base_dir)
+
+    for subdir in sorted(os.listdir(base_dir)):
+        #print(subdir)
+        sub_path = os.path.join(base_dir, subdir)
+        if not os.path.isdir(sub_path):
+            continue
+
+        bam_file = None
+        txt_file = None
+        for f in os.listdir(sub_path):
+            if f.endswith('_clean.bam'):
+                bam_file = os.path.join(sub_path, f)
+            elif f.endswith('_readcounts.txt'):
+                txt_file = os.path.join(sub_path, f)
+
+        if bam_file and txt_file:
+            file_prefix = os.path.basename(bam_file).replace('_clean.bam', '')
+
+            with open(txt_file) as f:
+                lines = [line.strip() for line in f if line.strip()]
+                main_count = int(lines[0].split()[0]) if len(lines) > 0 else None
+                spikein_count = int(lines[1].split()[0]) if len(lines) > 1 else None
+
+            results.append({
+                "index": index,
+                "fileprefix": file_prefix,
+                "bam_path": bam_file,
+                "main_count": main_count,
+                "spikein_count": spikein_count
+            })
+            index += 1
+
+    return results
+
+
+
+main_sp = input("Select the main RefGen from hg38, mm10: ")
+if main_sp == "hg38":
+    effectiveGenomeSize=2913022398
+    blackListFile='/Data/lht/lilab_users/25.GBY/blacklist/hg38-blacklist.v2.bed'
+elif main_sp == "mm10":
+    effectiveGenomeSize=2652783500
+    blackListFile='/Data/lht/lilab_users/25.GBY/blacklist/mm10-blacklist.v2.bed'
+
+binSize = input("Select the window-size for bigWig output. 10, 20, 50, 100,.... : " )
+print("wait to choose ctrl group....")
+
+current_dir = os.getcwd()
+base_dir = os.path.abspath(current_dir)
+sample_list = collect_bam_and_counts(base_dir)
+
+
+#print(sample_list)
+
+for ind,sample in enumerate(sample_list):
+    #print(ind, elm, spikeInSpe_count[elm], mainSpe_count[elm])
+    print(ind, sample['fileprefix'], sample['main_count'], sample['spikein_count'])
+
+print("Please select the Ctrl for spikeIn.")
+CtrlList = input("If you have more than two controls, please separate with space. (e.g. '1 3') :").split(" ")
+CtrlList = [int(x) for x in CtrlList if x.strip() != ''] 
+#TargetList = [sample for i, sample in enumerate(sample_list) if i not in CtrlList]
+TargetList = [i for i, sample in enumerate(sample_list) if i not in CtrlList]
+
+BigWig_DIR = "SPIKE_IN_bigwigFile/"
+os.makedirs(os.path.join(BigWig_DIR), exist_ok=True)
+
+#scalefactorlist=[]
+ScaleFactorFile = "spikeIn_count_reads_with_scaleFactor"
+print("target_Sample", "Ctrl_Sample", "target_bam", "scaleFactor", file = (open(ScaleFactorFile, "w")))
+for ctrlnum in CtrlList:
+    for targetnum in TargetList:
+        ScaleFactor = round(((sample_list[ctrlnum]["spikein_count"] * 100) / sample_list[targetnum]["spikein_count"]) / 100, 2)
+        #print(samplelistSampleBamList[num], spikeInSpe_count[SampleBamList[num]], mainSpe_count[SampleBamList[num]], 
+        #     str(CtrlspikeInDNAcount)+ "/" + str(spikeInSpe_count[SampleBamList[num]]), ScaleFactor, file = (open(ScaleFactorFile, "a")))
+        print(sample_list[targetnum]["fileprefix"], sample_list[ctrlnum]["fileprefix"], sample_list[targetnum]["bam_path"], ScaleFactor, file = (open(ScaleFactorFile, "a")))
+        
+        
+cmdcount = len(CtrlList) * len(TargetList)
+nnum = min(cmdcount*16, 48)
+tasknum = min(cmdcount*2, 6)
+
+Slurmfile = "spikein_bw.slurm"
+print("#!/bin/bash ", file = (open(Slurmfile, "w")))
+print("#SBATCH -J spikein  ", file = (open(Slurmfile, "a")))
+print("#SBATCH -p Acluster ", file = (open(Slurmfile, "a")))
+#print("#SBATCH -n " + str(nnum)  , file = (open(Slurmfile, "a")))
+print("#SBATCH --output=%j.out  ", file = (open(Slurmfile, "a")))
+print("#SBATCH --error=%j.err   ", file = (open(Slurmfile, "a")))
+print("#SBATCH --ntasks=" + str(tasknum)   , file = (open(Slurmfile, "a")))
+print("#SBATCH --cpus-per-task=4  ", file = (open(Slurmfile, "a")))
+
+for line in open(ScaleFactorFile):
+    if line.split()[0] == "target_Sample":
+        #print("NotUsed")
+        #print(line)
+        continue
+    #print("Use")
+    Line_list = (line[:-1]).split()
+    #print(Line_list)
+    main_bam = Line_list[2]
+    ScaleFactor = Line_list[3]
+    mainsp = Line_list[0]
+    ctrlsp = Line_list[1]
+    #out_prefix = os.path.join(BigWig_DIR, os.path.basename(os.path.splitext(main_bam)[0]))
+    codeBamCovScaled = "bamCoverage -b " + main_bam + " -o " + BigWig_DIR + mainsp + "_vs_" + ctrlsp + "_scaled_" + "_bin" + binSize + "_RPGC.bw " + \
+                       "-bs " + binSize + " -p 4 " +" -v --scaleFactor " +  ScaleFactor + " --centerReads " + \
+                       " --effectiveGenomeSize " + str(effectiveGenomeSize) + \
+                       " --normalizeUsing RPGC -bl " + blackListFile
+    
+    codeBamCovUnscaled = "bamCoverage -b " + main_bam + " -o " + BigWig_DIR + mainsp + "_vs_" + ctrlsp + "_Unscaled_" + "_bin" + binSize + "_RPGC.bw " + \
+                         "-bs " + binSize + " -p 4 " + " -v --centerReads " + \
+                         " --effectiveGenomeSize " + str(effectiveGenomeSize) + \
+                         " --normalizeUsing RPGC -bl " + blackListFile
+    
+    print(codeBamCovScaled, file = open(Slurmfile, "a"))
+    print(codeBamCovUnscaled, file = open(Slurmfile, "a"))
+    
+
+subprocess.run("sbatch " + Slurmfile, shell = True, check=True)
+
+

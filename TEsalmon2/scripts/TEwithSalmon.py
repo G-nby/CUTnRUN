@@ -1,0 +1,569 @@
+#!/usr/bin/env python3
+"""SalmonTE - Ultra-Fast and Scalable Quantification Pipeline of Transcript Abundances from Next Generation Sequencing Data
+
+Usage:
+    SalmonTE.py mk_expr [--inpath=inpath] [--ref_name=ref_name] [--outpath=outpath] [--num_threads=numthreads]
+    SalmonTE.py index [--ref_name=ref_name] (--input_fasta=fa_file) [--te_only]
+    SalmonTE.py quant [--reference=genome] [--outpath=outpath] [--num_threads=numthreads] [--exprtype=exprtype] [--trim] FILE...
+    SalmonTE.py test [--inpath=inpath] [--outpath=outpath] [--tabletype=tabletype] [--figtype=figtype] [--analysis_type=analysis_type] [--conditions=conditions] [--log2fc_min=log2fc] [--pmax=pmax]
+    SalmonTE.py test_single [--inpath=inpath] [--outpath=outpath] [--tabletype=tabletype] [--figtype=figtype] [--samples=samples] [--ref_name=ref_name] [--log2fc_min=log2fc] [--pmax=pmax]
+    SalmonTE.py (-h | --help)
+    SalmonTE.py --version
+
+Options:
+    -h --help     Show this screen.
+    --version     Show version.
+"""
+from docopt import docopt
+from glob import glob
+from itertools import combinations
+import logging
+import sys
+import os
+import tempfile
+import gzip
+import shutil
+import re
+from subprocess import run
+from pathlib import Path
+import pandas as pd
+import pyensembl
+
+def is_fastq(file_name):
+    file_name = file_name.lower()
+    if file_name.endswith("fastq"): return True
+    if file_name.endswith("fq"): return True
+    if file_name.endswith("fq.gz"): return True
+    if file_name.endswith("fastq.gz"): return True
+    return False
+
+
+def get_basename_noext(file_name):
+    # return os.path.basename(file_name.split('.')[0])
+    return os.path.basename(file_name).split('.')[0]
+
+
+def get_ext(file_name):
+    # return ".".join(os.path.basename(file_name).split('.')[1:])
+    return ".".join(os.path.basename(file_name).split('.')[1:])
+
+def longest_prefix(a, b):
+    a, b = (b,a) if len(a) > len(b) else (a,b)
+    return b[:max([i for i in range(len(a),-1,-1) if b.startswith(a[:i])]+[0])]
+
+
+def get_first_readid(file_name):
+    if file_name.lower().endswith(".gz"):
+        with gzip.open(file_name, "rb") as inp:
+            return inp.readline().decode("utf8").replace("/"," ").split()[0]
+    else:
+        with open(file_name, "r") as inp:
+            return inp.readline().replace("/"," ").split()[0]
+
+
+def correct_ext(ext):
+    return "fastq.gz" if "gz" in ext else "fastq"
+
+def collect_FASTQ_files(FILE):
+    fastq_files = set()
+    for file in FILE:
+        collected_files = glob(file)
+        if len(collected_files) == 0:
+            logging.error("Failed to read : '{}' is not existed.".format(file))
+            sys.exit(1)
+
+        elif len(collected_files) == 1 and not is_fastq(collected_files[0]):
+            logging.info("SalmonTE assumes that '{}' is a directory, and SalmonTE will search any FASTQ file in the directory.".format(collected_files[0]))
+            collected_files = glob(collected_files[0]+"/*")
+
+        black_list = set()
+        for col_file in collected_files:
+            if not is_fastq(col_file):
+                # logging.error("Failed to read : '{}' seems not to be a FASTQ file.".format(file))
+                logging.warn("SalmonTE found '{}' file, but this seems not to be a FASTQ file.".format(col_file))
+                black_list.add(col_file)
+
+        fastq_files |= set([os.path.abspath(file) for file in collected_files if file not in black_list])
+
+    tmp_dir = tempfile.mkdtemp()
+
+    paired = dict([ (file,set()) for file in fastq_files ])
+    for file_a, file_b in combinations(fastq_files, 2):
+        """
+        if get_ext(file_a) != get_ext(file_b):
+            logging.info("File extensions of all files must be same.")
+            sys.exit(1)
+        """
+
+        if get_first_readid(file_a) == get_first_readid(file_b):
+            paired[file_a].add(file_b)
+            paired[file_b].add(file_a)
+
+    is_paired = True
+    for file in paired:
+        if len(paired[file]) == 0: is_paired = False
+
+
+
+    for file in paired:
+        if is_paired and len(paired[file]) > 1:
+            logging.error("One of input files can be paired to multiple files")
+            sys.exit(1)
+        elif not is_paired and len(paired[file]) > 0:
+            logging.error("A paired-end sample and a single-end sample are placed together.")
+            sys.exit(1)
+
+    file_list = []
+    if is_paired:
+        for file, matched in paired.items():
+            if len(matched) == 0:
+                logging.error("Input dataset is supposed as a paired-ends dataset, but some files do not have thier pair.")
+                sys.exit(1)
+
+        logging.info("The input dataset is considered as a paired-ends dataset.")
+        for file in sorted(paired):
+            a = file
+            b = list(paired[file])[0]
+            if a > b: continue
+            # logging.info(f"{a},{b}")
+            trim_a = "_".join(get_basename_noext(a).split("_")[:-1]) + "_R1.{}".format(correct_ext(os.path.basename(a).split('.')[1:]))
+            trim_b = "_".join(get_basename_noext(a).split("_")[:-1]) + "_R2.{}".format(correct_ext(os.path.basename(b).split('.')[1:]))
+            os.symlink(os.path.abspath(a), os.path.join(tmp_dir, trim_a))
+            os.symlink(os.path.abspath(b), os.path.join(tmp_dir, trim_b))
+            file_list.append([(trim_a, trim_b)])
+    else:
+        logging.info("The input dataset is considered as a single-end dataset.")
+        for file in sorted(fastq_files):
+            file_name = os.path.join(tmp_dir, get_basename_noext(file)) + ".{}".format(correct_ext(os.path.basename(file).split('.')[1:]))
+            os.symlink(os.path.abspath(file), file_name)
+            file_list.append(os.path.basename(file))
+
+    ret = dict()
+    ret["paired"] = is_paired
+    ret["inpath"] = tmp_dir
+    ret["num_fastq"] = int(len(fastq_files) / (is_paired*2)) if is_paired else len(fastq_files)
+    ret["file_list"] = file_list
+    return ret
+    
+    
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# get the path!
+salmon_root = os.path.join(SCRIPT_DIR, "..", "SalmonTE", "SalmonTE-main")
+salmon_exe  = os.path.join(salmon_root,
+                           "salmon",
+                           sys.platform,
+                           "bin",
+                           "salmon")
+                           
+REdiscoverTE_root = os.path.join(SCRIPT_DIR, "..", "REdiscoverTE")
+rollup_path = os.path.join(REdiscoverTE_root,"rollup.R")
+annotation_path = os.path.join(REdiscoverTE_root,"original","REdiscoverTE","rollup_annotation")
+convert_R = os.path.join(SCRIPT_DIR, "convert_rds_to_csv.R")
+
+def run_salmon(param):
+    import snakemake
+    
+    is_human = "hs" in param["--reference"] or param["--reference"].endswith("/hs")
+    if is_human:
+        snakefile = os.path.join(salmon_root,
+                                 "snakemake/Snakefile.REdiscoverTE.paired" if param["paired"]
+                                 else "snakemake/Snakefile.REdiscoverTE.single")
+                                 
+        snakemake.snakemake(
+            snakefile=snakefile,
+            config={
+                "input_path": param["inpath"],
+                "output_path": param["--outpath"],
+                "index": param["--reference"],
+                "salmon": salmon_exe,
+                "num_threads" : param["--num_threads"],
+                "exprtype": param["--exprtype"],
+                "rollup_path": rollup_path,
+                "annotation_path":annotation_path,
+                "convert_R":convert_R,
+            },
+            quiet=True,
+            lock=False
+        )
+    else:
+        snakefile = os.path.join(salmon_root,
+                                 "snakemake/Snakefile.SalmonTE.paired" if param["paired"]
+                                 else "snakemake/Snakefile.SalmonTE.single")
+#    snakefile = os.path.join(os.path.dirname(__file__), "snakemake/Snakefile.paired" if param["paired"] else "snakemake/Snakefile.single")
+
+        snakemake.snakemake(
+            snakefile=snakefile,
+            config={
+                "input_path": param["inpath"],
+                "output_path": param["--outpath"],
+                "index": param["--reference"],
+                "salmon": salmon_exe,
+                "num_threads" : param["--num_threads"],
+                "exprtype": param["--exprtype"],
+            },
+            quiet=True,
+            lock=False
+        )
+
+    '''
+    if is_human:
+        # us rollup.R to quant
+        rds_output = os.path.join(param["--outpath"], "REdiscoverTE_abundance.Rds")
+        os.system(f"Rscript rollup.R -i {param['--outpath']} -o {rds_output}")
+        # get EXPR.csv
+        os.system(f"Rscript convert_rds_to_csv.R --input {rds_output} --output {param['--outpath']}")
+    '''
+
+    with open(os.path.join(param["--outpath"], "EXPR.csv" ), "r") as inp:
+        sample_ids = inp.readline().strip().split(',')[1:]
+    with open(os.path.join(param["--outpath"], "condition.csv" ), "w") as oup:
+        oup.write("SampleID,condition\n")
+        oup.write(
+            "\n".join([s+","+"NA" for s in sample_ids]) + "\n"
+        )
+
+
+def build_salmon_index(in_fasta, ref_id, te_only):
+    logging.info("Building Salmon Index")
+    if not os.path.exists(in_fasta):
+        logging.error("Input file does not exist.")
+        sys.exit(1)
+    ext = get_ext(in_fasta)
+    if not ext.lower() in [ "fa", "fasta" ]:
+        logging.error("Input file is not a FASTA file.")
+        sys.exit(1)
+    ref_path = os.path.join(os.path.dirname(__file__), "reference")
+    out_path = os.path.join(ref_path, ref_id)
+
+    if not os.path.exists(out_path):
+        os.mkdir(out_path)
+
+    clade_dict = {}
+    with open(os.path.join(ref_path, "clades_extended.csv"), "r") as inp:
+        for line in inp:
+            anno, clade, repeat_class, category = line.strip().split(",")
+            if te_only and category != "Transposable Element": continue
+            clade_dict[anno] = [clade, repeat_class]
+
+
+    file_fa = os.path.join(out_path, "ref.fa")
+    file_clade = os.path.join(out_path, "clades.csv")
+
+    with open(in_fasta, "r") as inp, \
+         open(file_fa, "w") as oup_fa, \
+         open(file_clade, "w") as oup_clade:
+        oup_clade.write("name,class,clade\n")
+        for line in inp:
+            if line.startswith(">"):
+                name, anno = line[1:].strip().split()[:2]
+                if anno in clade_dict:
+                    clade, repeat_class = clade_dict[anno]
+                else: 
+                    clade = "other"
+                    repeat_class = "other"
+
+                oup_fa.write(">{}\n".format(name))
+                oup_clade.write("{},{},{}\n".format(name,
+                                                   clade,
+                                                   repeat_class))
+            else:
+                oup_fa.write(line.strip()+"\n")
+
+    #salmon_bin = os.path.join(os.path.dirname(__file__), "salmon/{}/bin/salmon").format(sys.platform)
+    #salmon_bin = "salmon"
+    salmon_bin = salmon_exe
+    cmd = "{} index -t {} -i {} --thread 20".format(salmon_bin, file_fa, out_path)
+    #print(f"cmd is {cmd}")
+    os.system(cmd)
+    logging.info("Building '{}' index was finished!".format(ref_id))
+
+
+def collect_counts_file(filepath):
+    filepath = Path(filepath).resolve()
+    file_list = []
+    
+    for root, dirs, files in os.walk(filepath):
+        for f in files:
+            if f.endswith(".counts"): 
+                full_path = Path(root) / f
+                file_list.append(str(full_path.resolve()))
+    return file_list
+    
+def mk_csvs(file_list, outpath, ref_name):
+    outpath = Path(outpath).resolve()
+    outpath.mkdir(parents=True, exist_ok=True)
+    
+    sample_dfs = []
+    
+    #if ref_name == 'hs':
+    #    gtf_path = "/Share/home/lht/bioinformatic_tools/Ensembl_genome/GRCh38/Homo_sapiens.GRCh38.109.chr.gtf"
+    #elif ref_name == 'mm':
+    #    gtf_path = "/Share/home/gby/datalht/Ensembl_genome/GRCm38/Mus_musculus.GRCm38.102.gtf"
+    #else:
+    #    raise ValueError(f"Unsupported reference genome: {ref_name}")
+        
+    #db = pyensembl.Genome(
+    #    reference_name=ref_name,
+    #    annotation_name='my_genome_features',
+    #    gtf_path_or_url=gtf_path,
+    #)
+    
+    #db.index()
+    
+    if ref_name == 'hs':
+        probe_ref_file = "/Share/home/gby/datalht/Ensembl_genome/ensemblID_name/Human_Ensembl_Gene_ID_MSigDB.v2025.1.Hs.chip"
+    elif ref_name == 'mm':
+        probe_ref_file = "/Share/home/gby/datalht/Ensembl_genome/ensemblID_name/Mouse_Ensembl_Gene_ID_MSigDB.v2025.1.Mm.chip"
+    else:
+        raise ValueError(f"Unsupported reference genome: {ref_name}")    
+        
+    probe_ref_df = pd.read_csv(probe_ref_file, sep="\t")
+    probe_ref_dict = dict(zip(probe_ref_df["Probe Set ID"], probe_ref_df["Gene Symbol"]))
+    
+    for f in file_list:
+        fpath = Path(f)
+        sample_name = fpath.parent.name
+        
+        df = pd.read_csv(f, sep="\t", header=None, names=["TE", sample_name])
+        sample_dfs.append(df)
+    
+    expr_df = sample_dfs[0]
+    for df in sample_dfs[1:]:
+        expr_df = pd.merge(expr_df, df, on="TE", how="outer")
+    expr_df = expr_df.fillna(0)
+    
+    summary_df = expr_df.tail(5)
+    expr_df = expr_df.iloc[:-5, :]
+    
+    expr_df = expr_df.rename(columns={"TE": "ensembl"})
+    
+    expr_ensembl_csv = outpath / "EXPRensembl.csv"
+    expr_df.to_csv(expr_ensembl_csv, index=False)
+    
+    def get_gene_name(gene_id):     
+        try:
+            gene_name = probe_ref_dict.get(gene_id, None)
+            if gene_name is None:
+                logging.warning(f"Gene {gene_id} not found!")
+                return gene_id
+            if not gene_name:
+                logging.debug(f"Gene {gene_id} found but gene_name is empty!")
+                return gene_id 
+            logging.debug(f"gene ID: {gene_id}, Gene_name : {gene_name}")
+            return gene_name
+        except ValueError:
+            logging.warning(f"Error processing gene {gene_id}: {str(e)}")
+            return gene_id
+    
+    # expr_df["TE"] = expr_df["ensembl"].apply(lambda x: ensembl.gene_name_of_transcript(x))
+    expr_df["TE"] = expr_df["ensembl"].apply(get_gene_name)
+    
+    # incase there's duplicate genenames
+    def add_suffix_to_duplicates(series):
+        counts = series.value_counts() 
+        suffix_map = {} 
+        new_values = [] 
+        
+        for value in series:
+            if counts[value] > 1: 
+                if value not in suffix_map:
+                    suffix_map[value] = 1
+                else:
+                    suffix_map[value] += 1
+                #new_value = f"{value}.{suffix_map[value]}" if suffix_map[value] > 1 else value
+                new_value = f"{value}.{suffix_map[value]}"
+            else:
+                new_value = value  
+            new_values.append(new_value)
+             
+        return pd.Series(new_values) 
+    
+    expr_df["TE"] = add_suffix_to_duplicates(expr_df["TE"])
+
+    cols = ["TE"] + [c for c in expr_df.columns if c not in {"ensembl", "TE"}]
+    expr_df_2 = expr_df[cols]
+    #expr_df_2 = expr_df[["TE"] + [col for col in expr_df.columns if (col != "ensembl" and "TE")]]
+    expr_csv = outpath / "EXPR.csv"
+    expr_df_2.to_csv(expr_csv, index=False)
+    
+    clades_df = pd.DataFrame({
+        "name": expr_df["TE"],
+        "class": ["regular_gene"] * len(expr_df),
+        "clade": ["regular_gene"] * len(expr_df)
+    })[["name", "class", "clade"]]
+    clades_csv = outpath / "clades.csv"
+    clades_df.to_csv(clades_csv, index=False)
+    
+    samples = [col for col in expr_df.columns if col not in {"ensembl", "TE"}]
+    condition_df = pd.DataFrame({
+        "SampleID": samples,
+        "condition": "NA"
+    })
+    condition_csv = outpath / "condition.csv"
+    condition_df.to_csv(condition_csv, index=False)
+    
+    summary_csv = outpath / "HTSeq_summary.csv"
+    summary_df.to_csv(summary_csv, index=False)
+    
+    logging.info(f"csvs can be found in {args['--outpath']}!")
+
+
+
+def run(args):
+    if args['mk_expr']:
+        if args['--num_threads'] is None:
+            args['--num_threads'] = 4
+        if args['--ref_name'] is None:
+            args['--ref_name'] = 'hs'
+        
+        if args['--outpath'] is None:
+            #args['--outpath'] = os.path.join(os.getcwd(), "hisatDE_out/")
+            args['--outpath'] = os.path.join(args['--inpath'], "hisatDE_out/")
+           
+        logging.info("Starting making expr file from rnaseq hisat outpute")
+        logging.info("collecting counts files...")
+        file_list = collect_counts_file(args["--inpath"])
+        n_file = len(file_list)
+        logging.info(f"{n_file} counts files are found in {args['--inpath']}")
+        # make expr/condition/clades csvs
+        mk_csvs(file_list, args['--outpath'], args['--ref_name'])
+        logging.info("Quantification has been finished.")
+        
+    if args['quant']:
+        if args['--exprtype'] is None:
+            args['--exprtype'] = "TPM"
+        if args['--num_threads'] is None:
+            args['--num_threads'] = 4
+        if args['--outpath'] is None:
+            args['--outpath'] = os.path.join(os.getcwd(), "SalmonTE_output/")
+        if args['--reference'] is None or args['--reference'] == "hs":
+            args['--reference'] = os.path.join(SCRIPT_DIR, "reference", "hs")
+        elif os.path.exists(os.path.join(SCRIPT_DIR, "reference", args['--reference'],"versionInfo.json")):
+            args['--reference'] = os.path.join(SCRIPT_DIR, "reference", args['--reference'])
+        else:
+            logging.error("Reference file is not found! plz choose from mm/hs")
+            sys.exit(1)
+
+        if args['--reference'].startswith("./"):
+           args['--reference'] = args['--reference'][2:]
+        
+        # trim or not
+        args["--trim"] = args["--trim"] if args["--trim"] else False
+        
+        #if not input_path:
+        args["--inpath"] = args['FILE'][0]
+           
+        logging.info("Starting quantification mode")
+        logging.info("Collecting FASTQ files...")
+        param = {**args, **collect_FASTQ_files(args['FILE'])}
+        logging.info("Collected {} FASTQ files.".format(param["num_fastq"]))        
+        logging.info("Quantification has been finished.")
+        logging.info("Running Salmon using Snakemake")
+        print(f"params are {param}")
+
+        run_salmon(param)
+        os.system("cp {}/clades.csv {}".format(args['--reference'],
+                                               args['--outpath']))
+
+    if args['index']:
+        build_salmon_index(args['--input_fasta'], args['--ref_name'], args['--te_only'])
+
+    if args['test']:
+        import snakemake
+        if args['--inpath'] is None:
+            logging.error("Input path must be specified!")
+            sys.exit(1)
+        elif not os.path.exists(os.path.join(args['--inpath'], "EXPR.csv")):
+            logging.error("Input path is specified incorrectly!")
+            sys.exit(1)
+
+        if args['--outpath'] is None:
+            snakemake.utils.makedirs(os.path.join(os.getcwd(), "SalmonTE_output"))
+        elif not os.path.exists(args['--outpath']):
+            snakemake.utils.makedirs(args['--outpath'])
+
+        if args['--tabletype'] is None:
+            args['--tabletype'] = "xls"
+
+        if args['--figtype'] is None:
+            args['--figtype'] = "pdf"
+
+        if args['--analysis_type'] is None:
+            args['--analysis_type'] = "DE"
+        args['--analysis_type'] = args['--analysis_type'].upper()
+        if args['--analysis_type'] != "DE" and args['--analysis_type'] != "LM":
+            logging.error("analysis_type must be set as 'DE' or 'LM'.")
+
+        if args['--conditions'] is None:
+            args['--conditions'] = ""
+        
+        if args['--log2fc_min'] is None:
+            args['--log2fc_min'] = "0.5"
+        if args['--pmax'] is None:
+            args['--pmax'] = "0.05"
+        
+        #  Rscript SalmonTE_Stats.R SalmonTE_output xls PDF tmp
+        os.system("Rscript {} {} {} {} {} {} {} {} {}".format( os.path.join(os.path.dirname(__file__), "SalmonTE_Stats.R"),
+                                        args["--inpath"],
+                                        args['--tabletype'],
+                                        args['--figtype'],
+                                        args['--outpath'],
+                                        args['--analysis_type'],
+                                        args['--conditions'],
+                                        args['--log2fc_min'],
+                                        args['--pmax']))
+    
+    
+    if args['test_single']:
+        import snakemake
+        if args['--inpath'] is None:
+            logging.error("Input path must be specified!")
+            sys.exit(1)
+        elif not os.path.exists(os.path.join(args['--inpath'], "EXPR.csv")):
+            logging.error("Input path is specified incorrectly!")
+            sys.exit(1)
+
+        if args['--outpath'] is None:
+            snakemake.utils.makedirs(os.path.join(os.getcwd(), "SalmonTE_cor_output"))
+        elif not os.path.exists(args['--outpath']):
+            snakemake.utils.makedirs(args['--outpath'])
+
+        if args['--tabletype'] is None:
+            args['--tabletype'] = "xls"
+
+        if args['--figtype'] is None:
+            args['--figtype'] = "pdf"
+
+        if args['--samples'] is None:
+            args['--samples'] = ""
+            
+        if args['--ref_name'] is None:
+            args['--ref_name'] = "hs"
+        if args['--ref_name'] in ['hs','human']:
+            BCV = 0.4
+        else:
+            BCV = 0.1
+            
+        if args['--log2fc_min'] is None:
+            args['--log2fc_min'] = "0.5"
+        if args['--pmax'] is None:
+            args['--pmax'] = "0.05"
+        
+        #  Rscript SalmonTE_Stats.R SalmonTE_output xls PDF tmp
+        os.system("Rscript {} {} {} {} {} {} {} {} {}".format( os.path.join(os.path.dirname(__file__), "SalmonTE_Stats_single.R"),
+                                        args["--inpath"],
+                                        args['--tabletype'],
+                                        args['--figtype'],
+                                        args['--outpath'],
+                                        args['--samples'],
+                                        BCV,
+                                        args['--log2fc_min'],
+                                        args['--pmax']))
+
+
+
+if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+    args = docopt(__doc__, version='SalmonTE 0.4')
+    run(args)

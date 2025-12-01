@@ -1,0 +1,2 @@
+用法是：
+先用类似chipseq的方式做预处理（用法一样），然后把2.spikeinscale这个复制到总文件夹（里面每个小文件夹是一个样本的处理结果），python 2.spikeinscale，根据提示选择基因组、选择windowsize、选择ctrl group（选多个的话用空格分割，其他file会分别和每个ctrl做一个比较）然后等待结果，结果bigwig在大文件夹下SPIKE_IN_bigwigFile这个文件夹里

@@ -1,0 +1,144 @@
+import sys
+from os.path import join
+import os
+INDEX = config["index"]
+INPUT_DIR = config["input_path"]
+OUTPUT_DIR = config["output_path"]
+SALMON_PATH = config["salmon"].format(sys.platform)
+NUM_THREADS = str(config["num_threads"])
+SAMPLES_FQ = glob_wildcards(join(INPUT_DIR, "{sample}_R1.fastq")).sample
+SAMPLES_GZ = glob_wildcards(join(INPUT_DIR, "{sample}_R1.fastq.gz")).sample
+EXPR_TYPE = config["exprtype"]
+ROLLUP_SCRIPT = config["rollup_path"]
+ANNOT_PATH = config["annotation_path"]
+CONVERT_R = config["convert_R"]
+
+###################### paired (remember to delete the annotation after adjustment
+print(SALMON_PATH)
+print("Files in INPUT_DIR:")
+for f in os.listdir(INPUT_DIR):
+    print(os.path.join(INPUT_DIR, f))
+print(SAMPLES_FQ,SAMPLES_GZ)
+SAMPLES_ALL=SAMPLES_FQ+SAMPLES_GZ
+
+
+rule all:
+    input:
+        join(OUTPUT_DIR,"EXPR.csv"),
+        join(OUTPUT_DIR,"MAPPING_INFO.csv")
+
+rule run_salmon_fq:
+    wildcard_constraints:
+        sample_fq="|".join(SAMPLES_ALL)
+    input:
+        idx = INDEX,
+        r1 = join(INPUT_DIR, "{sample_fq}_R1.fastq"),
+        r2 = join(INPUT_DIR, "{sample_fq}_R2.fastq")
+    output:
+        join(OUTPUT_DIR, "{sample_fq}")
+
+    log: "{sample_fq}.salmon.log"
+    shell:
+        '''
+        echo "-1 {input.r1} -2 {input.r2}"
+        set -euo pipefail
+        echo "PWD=$(pwd)"          >> {log}
+        CMD="{SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS}"
+        echo "Will run: $CMD"  >> {log}
+        #{SALMON_PATH} + quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} 2>/dev/null
+        #{SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} >> {log} 2>&1
+        {SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} >> {log} 2>&1
+        echo " here you are processing the paired human salmon alignment, good luck with your research and good day!"
+        echo "PWD=$(pwd)"          >> {log}
+        '''
+        
+rule run_salmon_gz:
+    wildcard_constraints:
+        #sample_gz="|".join(SAMPLES_GZ)
+        sample_gz="|".join(SAMPLES_ALL) 
+    input:
+        idx = INDEX,
+        r1 = join(INPUT_DIR, "{sample_gz}_R1.fastq.gz"),
+        r2 = join(INPUT_DIR, "{sample_gz}_R2.fastq.gz")
+    
+    output:
+        join(OUTPUT_DIR,"{sample_gz}")
+    log: "{sample_gz}.salmon.log"
+    shell:
+        '''
+        echo "-1 {input.r1} -2 {input.r2}"
+        set -euo pipefail
+        echo "PWD=$(pwd)"          >> {log}
+        CMD="{SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS}"
+        echo "Will run: $CMD"  >> {log}
+        #{SALMON_PATH} + quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} 2>/dev/null
+        #{SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} >> {log} 2>&1
+        {SALMON_PATH} quant -q --seqBias --gcBias -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p {NUM_THREADS} 2>/dev/null
+        echo " here you are processing the paired human salmon alignment, good luck with your research and good day!"
+        echo "PWD=$(pwd)"          >> {log}
+        '''
+
+
+rule run_rediscoverte_rollup:
+    input:
+        quant_dirs = expand(join(OUTPUT_DIR, "{sample_fq}"), sample_fq = SAMPLES_FQ) +
+                     expand(join(OUTPUT_DIR, "{sample_gz}"), sample_gz = SAMPLES_GZ)
+    output:
+        # rollupout is the result dir
+        rds_file = join(OUTPUT_DIR, "rollupout", "RE_all_1_raw_counts.RDS")
+    shell:
+        """
+        echo '222'
+        outdir=$(dirname {output.rds_file})
+        mkdir -p $outdir
+        echo -e "sample\\tquant_sf_path" > $outdir/REdiscoverTE.tsv
+        for d in {input.quant_dirs}; do
+            s=$(basename ${{d}})
+            echo -e "${{s}}\\t${{d}}/quant.sf" >> $outdir/REdiscoverTE.tsv
+        done
+
+        {ROLLUP_SCRIPT} \
+            --metadata=$outdir/REdiscoverTE.tsv \
+            --datadir={ANNOT_PATH} \
+            --nozero --threads={NUM_THREADS} --assembly=hg38 \
+            --outdir=$outdir
+        """
+
+rule convert_rollup_to_expr:
+    input:
+        rds_file = join(OUTPUT_DIR, "rollupout", "RE_all_1_raw_counts.RDS")
+    output:
+        join(OUTPUT_DIR, "EXPR.csv")
+    shell:
+        """
+        echo '111'
+        Rscript {CONVERT_R} {input.rds_file} {output}
+        """
+
+
+rule collect_mappability:
+    input:
+        expand(join(OUTPUT_DIR,"{sample_fq}"), sample_fq = SAMPLES_FQ) +
+        expand(join(OUTPUT_DIR,"{sample_gz}"), sample_gz = SAMPLES_GZ) 
+    output:
+        join(OUTPUT_DIR,"MAPPING_INFO.csv")
+    run:
+        def get_mappability(fname):
+            import json
+            from collections import defaultdict
+            with open(fname, "r") as inp:
+                data = json.load(inp)
+            sid = file.split("/")[-3]
+            return { 
+                "SampleID" : sid, 
+                "num_mapped": data["num_mapped"], 
+                "num_processed" : data["num_processed"], 
+                "percent_mapped": data["percent_mapped"] }
+        tb = []
+        for file in input:
+            file = join(file, "aux_info/meta_info.json")
+            tb.append(get_mappability(file))
+
+        import pandas as pd
+        with open(str(output), "w") as oup:
+            oup.write(pd.DataFrame(tb).set_index("SampleID").to_csv(sep=",", index_label="SampleID"))
