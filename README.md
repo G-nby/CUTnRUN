@@ -112,8 +112,8 @@ sbatch my_cor.slurm
 位于 `./usefulscripts` 文件夹下，使用 `source /Share/samples/Acluster.sh` 激活的环境即可
 ### dt_heatmap
 （复制到自己的文件夹中，修改参数）vim进入文件，  
-修改 `computeMatrix` 模块的 `-R`（参考位置，可提交bed或peak文件等格式） `-S`（需要画图的样本的peak文件或者bw文件等） `-o`（数据文件位置，*.gz） `--samplesLabel`（样本命名）参数，  
-修改 `plotProfile` `plotHeatmap`模块的 `-m`（上一把的数据文件，*.gz） `-out`（图片输出） `--plotTitle`（图片标题）参数，  
+修改 `computeMatrix` 模块的 `-R`（参考位置，可提交bed或peak文件等格式） `-S`（需要画图的样本的peak文件或者bw文件等） `-o`（数据文件位置，xx.gz） `--samplesLabel`（样本命名）参数，  
+修改 `plotProfile` `plotHeatmap`模块的 `-m`（上一部分的数据文件，xx.gz） `-out`（图片输出） `--plotTitle`（图片标题）参数，  
 然后使用 `sbatch` 命令提交即可
 ```bash
 sbatch my_dt_heatmap.slurm
@@ -137,7 +137,7 @@ sbatch homer.slurm <input_file> <ref>
 ```
 `ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
 ### ~~pca~~
-~~（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。~~
+~~（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。~~  
 计划更新normlize版本并加入到TEsalmon处理中
 ### dump
 使用如下命令提交
