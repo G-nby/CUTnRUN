@@ -119,7 +119,28 @@ sbatch my_cor.slurm
 sbatch my_dt_heatmap.slurm
 ```
 ### cobed
+使用如下命令提交
+```bash
+sbatch cobed2.slurm <fileA> <fileB> <output_directory>
+```
 ### bw_cor/bam_cor
+使用如下命令提交
+```bash
+sbatch bw_cor.slurm <bw_dir> <outprefix> <binsize>
+sbatch bam_cor.slurm <bam_dir> <outprefix> <binsize>
+```
+`outprefix` 为输出文件命名前缀，binsize为自定义窗口大小，默认为1000bp
 ### homer
-### pca
+使用如下命令提交
+```bash
+sbatch homer.slurm <input_file> <ref>
+```
+`ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
+~~### pca~~
+~~（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。~~
+计划更新normlize版本并加入到TEsalmon处理中
 ### dump
+使用如下命令提交
+```bash
+sbatch homer.slurm <SRR文件夹所在路径> <输出路径>
+```
