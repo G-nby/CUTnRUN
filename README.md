@@ -123,6 +123,11 @@ sbatch my_dt_heatmap.slurm
 ```bash
 sbatch cobed2.slurm <fileA> <fileB> <output_directory>
 ```
+如有多个样本，希望寻找共有overlap，请使用
+```bash
+sbatch cobed3.slurm <filelist>
+```
+其中， `filelist` 为一个文件列表，是想要进行overlap分析的多个peak文件的路径
 ### bw_cor/bam_cor
 使用如下命令提交
 ```bash
