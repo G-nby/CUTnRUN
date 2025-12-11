@@ -5,6 +5,7 @@ backup basic pipelines on acluster
 - [CUTRUN](#cutrun)
   - [CUTRUN 基本 pipeline 用法（common/ecoli）](#cutrun-基本pipeline用法commonecoli)
   - [CUTRUN spikein](#cutrun-spikein)
+  - [CUTRUN count_draw](#cutrun-countdraw)
 - [RNAseq](#rnaseq)
   - [使用 TEsalmon2 处理 TE 数据](#使用tesalmon2处理te数据)
   - [使用 TEsalmon2 处理 regular gene 数据](#使用tesalmon2处理regular-gene数据)
@@ -37,6 +38,18 @@ common处理使用 `./CUTRUN` 文件夹脚本即可
 python 2.spikeinscale
 ```
 根据提示选择基因组、选择windowsize、选择ctrl group（选多个的话用空格分割，其他file会分别和每个ctrl做一个比较），然后等待结果生成。结果bigwig文件在大文件夹下 `SPIKE_IN_bigwigFile` 文件夹里  
+### CUTRUN count&draw
+运行以下命令激活环境
+```bash
+conda activate TEsalmon2
+source ~/Acluster.sh
+```
+脚本位于`./CUTRUN/count_draw` 文件夹中。将 `count_draw.slurm` 复制到自己需要的地方，cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。
+根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
+```bash
+sbatch my_count_draw.slurm
+```
+结果可在输出文件夹的 `result` 文件夹中查看。
 
 
 ## RNAseq
