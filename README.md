@@ -51,7 +51,8 @@ source ~/Acluster.sh
 sbatch my_count_draw.slurm
 ```
 结果可在输出文件夹的 `result` 文件夹中查看。  
-**注意：目前仅有 `hg38` 和 `mm39` 参考基因组可使用， `mm10` 将随后更新**
+~~**注意：目前仅有 `hg38` 和 `mm39` 参考基因组可使用， `mm10` 将随后更新**~~
+参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
 
 
 ## RNAseq
@@ -218,7 +219,8 @@ cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。�
 bash my_count_draw.slurm
 ```
 结果可在输出文件夹的 `result` 文件夹中查看。  
-**注意：目前仅有 `hg38` 和 `mm39` 参考基因组可使用， `mm10` 将随后更新**
+~~**注意：目前仅有 `hg38` 和 `mm39` 参考基因组可使用， `mm10` 将随后更新**~~
+参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
 
 
 ## zhaolabRNAseq
