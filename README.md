@@ -45,7 +45,9 @@ python 2.spikeinscale
 conda activate TEsalmon2
 source ~/Acluster.sh
 ```
-脚本位于`./CUTRUN/count_draw` 文件夹中。将 `count_draw.slurm` 复制到自己需要的地方，cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。
+脚本位于`./CUTRUN/count_draw` 文件夹中。将 `count_draw.slurm` 复制到自己需要的地方，cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。  
+bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。   
+`TE_classes_of_interest` 参数必填，`TE_repname_for_boxplot_and_heatmap` 参数选填（填则heatmap和boxplot的repname层级仅画这些TE，不填则画符合 `TE_classes_of_interest` 要求的所有repname，有可能数量较多看不清）。  
 根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
 ```bash
 sbatch my_count_draw.slurm
