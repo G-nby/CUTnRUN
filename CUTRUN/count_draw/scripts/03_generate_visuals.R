@@ -404,7 +404,10 @@ if(nrow(te_data)>0){
     geom_text(aes(label=round(Correlation,2)), size=3) +
     scale_fill_viridis_c(option="C", limits=c(-1,1)) +
     theme_minimal() +
-    labs(title="TE Correlation Heatmap (All TE Classes)")
+    labs(title="TE Correlation Heatmap (All TE Classes)") + 
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    )
   ggsave(file.path(figures_dir,"Heatmaps","TE_All_Heatmap.png"), p_heatmap, width=8, height=6)
 
   # --- 总体 Boxplot ---
@@ -412,7 +415,11 @@ if(nrow(te_data)>0){
     geom_boxplot() +
     theme_bw(base_size=14) +
     labs(title="TE log2FC distribution across samples", x="Sample", y="log2FC vs IgG") +
-    theme(legend.position="none")
+    theme(
+      legend.position="none",
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8),
+      strip.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 9)
+    )
   ggsave(file.path(figures_dir,"Boxplots","TE_All_Boxplot.png"), p_box, width=8, height=6)
 
   # --- 按 Family (Class facet) Boxplot ---
@@ -421,7 +428,9 @@ if(nrow(te_data)>0){
     facet_wrap(~Family, scales="free_y") +
     theme_bw(base_size=12) +
     labs(title="TE log2FC by Family", x="Sample", y="log2FC vs IgG") +
-    theme(legend.position="none")
+    theme(legend.position="none", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Boxplots","TE_Boxplot_by_Family.png"), p_box_family, width=12, height=8)
   
   p_box_class <- ggplot(te_data, aes(x=sample, y=lfc_over_igg, fill=sample)) +
@@ -429,7 +438,9 @@ if(nrow(te_data)>0){
     facet_wrap(~Class, scales="free_y") +
     theme_bw(base_size=12) +
     labs(title="TE log2FC by Class", x="Sample", y="log2FC vs IgG") +
-    theme(legend.position="none")
+    theme(legend.position="none", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Boxplots","TE_Boxplot_by_Class.png"), p_box_class, width=12, height=8)
 
   # --- 按 repName Boxplot ---
@@ -456,7 +467,10 @@ if(nrow(te_data)>0){
     scale_fill_viridis_c(option="C", limits=c(-1,1)) +
     facet_wrap(~Class) +
     theme_minimal() +
-    labs(title="TE Correlation Heatmap by Class")
+    labs(title="TE Correlation Heatmap by Class") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Heatmaps","TE_Heatmap_by_Class.png"), p_heatmap_class, width=12, height=10)
   
   cor_family_list <- list()
@@ -473,7 +487,10 @@ if(nrow(te_data)>0){
     scale_fill_viridis_c(option = "C", limits = c(-1, 1)) +
     facet_wrap(~Family) +
     theme_minimal() +
-    labs(title = "TE Correlation Heatmap by Family")
+    labs(title = "TE Correlation Heatmap by Family") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir, "Heatmaps", "TE_Heatmap_by_Family.png"), p_heatmap_family, width = 12, height = 10)
 
   # --- 按 repName facet Heatmap ---
@@ -491,7 +508,10 @@ if(nrow(te_data)>0){
     scale_fill_viridis_c(option="C", limits=c(-1,1)) +
     facet_wrap(~repName) +
     theme_minimal() +
-    labs(title="TE Correlation Heatmap by repName")
+    labs(title="TE Correlation Heatmap by repName") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Heatmaps","TE_Heatmap_by_repName.png"), p_heatmap_rep, width=16, height=12)
 
   message("--- TE Heatmap 和 Boxplot 已完成 ---")
@@ -509,7 +529,10 @@ if(nrow(gene_data)>0){
     geom_text(aes(label=round(Correlation,2)), size=3) +
     scale_fill_viridis_c(option="C", limits=c(-1,1)) +
     theme_minimal() +
-    labs(title="Gene Correlation Heatmap")
+    labs(title="Gene Correlation Heatmap") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Heatmaps","Gene_All_Heatmap.png"), p_heatmap_gene, width=8, height=6)
 
   # --- Gene 总体 Boxplot ---
@@ -517,7 +540,9 @@ if(nrow(gene_data)>0){
     geom_boxplot() +
     theme_bw(base_size=14) +
     labs(title="Gene log2FC distribution across samples", x="Sample", y="log2FC vs IgG") +
-    theme(legend.position="none")
+    theme(legend.position="none", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8)
+    )
   ggsave(file.path(figures_dir,"Boxplots","Gene_All_Boxplot.png"), p_box_gene, width=8, height=6)
 
   message("--- Gene Heatmap 和 Boxplot 已完成 ---")
