@@ -10,7 +10,7 @@ reference=hg38
 bam_dir="/Share/home/gby/workgby/peak_cor_test/bamdir"
 outputdir="/Share/home/gby/workgby/peak_cor_test/bamdirout" 
 TE_classes_of_interest="LTR,LINE,SINE" 
-#TE_repname_for_boxplot_and_heatmap="LTR12,LTR7,L1MC3,MER84-int"
+SAMPLES_FOR_FILTERING="MK9me3,MHDAC2,MH3panAC"
 SAMPLES_FOR_GENE_BOXPLOT="MHDAC2,MGFP,MK9me3,MH3panAC"
 
 # ===== advanced modify params===
@@ -19,7 +19,7 @@ N_LABELS_GENES=20
 N_LABELS_TE_FAMILY=20
 N_LABELS_TE_REPNAME=40
 
-#SAMPLES_FOR_FILTERING="MK9me3,MHDAC2,MH3panAC"
+
 # ------0.prepareation---
 mkdir -p "${outputdir}/featurecount"
 mkdir -p "${outputdir}/results"
@@ -52,29 +52,17 @@ if [ ${#bam_files[@]} -eq 0 ]; then echo "ERROR: no bam in $bam_dir"; exit 1; fi
 # -----1.featurecount----
 min_frag=30
 max_frag=1200
-
-COUNTS_TXT="${outputdir}/featurecount/featurecounts.txt"
-        
-if [ -f "$COUNTS_TXT" ]; then
-    echo "--- [SKIP] $COUNTS_TXT already exists. Skipping featureCounts. ---"
-else
-    echo "--- [RUN] Running featureCounts... ---"
-    
-    # 确保输出目录存在
-    mkdir -p "$(dirname "$COUNTS_TXT")"
-
-    featureCounts \
-            -a "${SAF}" \
-            -o "$COUNTS_TXT" \
-            -F SAF \
-            --ignoreDup \
-            -p \
-            -d ${min_frag} -D ${max_frag} \
-            -T ${SLURM_CPUS_PER_TASK} \
-            -M \
-            --fraction \
-            "${bam_files[@]}"
-fi
+featureCounts \
+        -a "${SAF}" \
+        -o "${outputdir}/featurecount/featurecounts.txt" \
+        -F SAF \
+        --ignoreDup \
+        -p \
+        -d ${min_frag} -D ${max_frag} \
+        -T ${SLURM_CPUS_PER_TASK} \
+        -M \
+        --fraction \
+        "${bam_files[@]}"
 
 # ---- 2. 生成临时 config_slurm.R ----
 COUNTS_TXT="${outputdir}/featurecount/featurecounts.txt"
@@ -84,8 +72,6 @@ RUN_R="/Share/home/gby/CUTnRUN/CUTRUN/count_draw/run.R"
 TE_R=$(echo $TE_classes_of_interest | tr ',' ' ' | awk '{printf("c(\""); for(i=1;i<NF;i++) printf("%s\",\""),$i; printf("%s\")",$NF)}')
 FILT_R=$(echo $SAMPLES_FOR_FILTERING | tr ',' ' ' | awk '{printf("c(\""); for(i=1;i<NF;i++) printf("%s\",\""),$i; printf("%s\")",$NF)}')
 BOX_R=$(echo $SAMPLES_FOR_GENE_BOXPLOT | tr ',' ' ' | awk '{printf("c(\""); for(i=1;i<NF;i++) printf("%s\",\""),$i; printf("%s\")",$NF)}')
-BOXHEAT_TE=$(echo $TE_repname_for_boxplot_and_heatmap | tr ',' ' ' | awk '{printf("c(\""); for(i=1;i<NF;i++) printf("%s\",\""),$i; printf("%s\")",$NF)}')
-
 
 cat > "${CONFIG_R}" <<EOF
 # ===== 自动生成configR =====
@@ -112,7 +98,6 @@ N_LABELS_GENES       <- $N_LABELS_GENES
 N_LABELS_TE_FAMILY   <- $N_LABELS_TE_FAMILY
 N_LABELS_TE_REPNAME  <- $N_LABELS_TE_REPNAME
 TE_CLASSES_OF_INTEREST <- $TE_R
-TE_repname_OI <- $BOXHEAT_TE
 
 SAMPLES_FOR_FILTERING    <- $FILT_R
 SAMPLES_FOR_GENE_BOXPLOT <- $BOX_R

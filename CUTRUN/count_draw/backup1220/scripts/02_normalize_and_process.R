@@ -103,8 +103,7 @@ if (file.exists(cache_files$plot_data)) {
   
   # --- 再次检查用户配置的样本名是否有效 ---
   all_samples_in_data <- unique(plot_data$sample)
-  #user_samples <- c(SAMPLES_FOR_FILTERING, SAMPLES_FOR_GENE_BOXPLOT)
-  user_samples <- c(SAMPLES_FOR_GENE_BOXPLOT)
+  user_samples <- c(SAMPLES_FOR_FILTERING, SAMPLES_FOR_GENE_BOXPLOT)
   missing_samples <- setdiff(user_samples, all_samples_in_data)
   if (length(missing_samples) > 0) {
     stop(paste("错误：您在配置区指定的样本名不存在于数据中，请检查拼写:", paste(missing_samples, collapse=", ")))

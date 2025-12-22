@@ -12,17 +12,20 @@ message("--> [运行] 无论是否存在缓存，此模块总是重新生成图�
 
 suppressPackageStartupMessages({
   library(tidyverse); library(ggplot2); library(ggrepel)
-  library(viridis); library(circlize)
+  library(viridis); library(circlize); library(patchwork)
 })
 
 # --- 加载上一步的结果 ---
 plot_data <- readRDS(cache_files$plot_data)
 
 # --- 创建输出目录 ---
+#dir.create(file.path(figures_dir, "Correlations"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(figures_dir, "Correlation_Family_Level"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(figures_dir, "Correlation_repName_Level"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(figures_dir, "Correlation_Gene_Level"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(figures_dir, "Boxplots"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(figures_dir, "Heatmaps"), recursive = TRUE, showWarnings = FALSE)
+
 # ==============================================================================
 # ## 第 6 节：定义核心绘图函数 ##
 # ==============================================================================
@@ -51,8 +54,14 @@ generate_correlation_plot <- function(data, x_name, y_name, feature_type, te_cla
         !!x_col := mean(lfc_over_igg[sample == x_name], na.rm = TRUE),
         !!y_col := mean(lfc_over_igg[sample == y_name], na.rm = TRUE),
         n_elements = n() / 2, mean_div = mean(milliDiv, na.rm = TRUE), .groups = "drop"
-      ) %>%
-      filter(Class %in% te_classes, n_elements > 10)
+      ) 
+      #%>%
+      #filter(Class %in% te_classes, n_elements > 10)
+    if (!identical(te_classes, "all")) {
+      plot_df_base <- plot_df_base %>% filter(Class %in% te_classes)
+    }
+    
+    plot_df_base <- plot_df_base %>% filter(n_elements > 10)
     
     if(nrow(plot_df_base) < n_labels) {
       message(paste("       警告: TE数据点不足 (", nrow(plot_df_base), ")，跳过绘图。"))
@@ -61,9 +70,9 @@ generate_correlation_plot <- function(data, x_name, y_name, feature_type, te_cla
     
     plot_df <- plot_df_base %>%
       mutate(age_group = cut(mean_div, breaks = quantile(mean_div, probs = seq(0, 1, 0.33), na.rm = TRUE),
-                             labels = c("年轻", "中等", "古老"), include.lowest = TRUE))
+                             labels = c("young", "mid", "old"), include.lowest = TRUE))
     point_aes <- aes(color = Family, size = log10(n_elements), shape = age_group)
-    size_lab <- "log10(元件数量)"; shape_lab <- "TE年龄组"; color_lab <- "TE家族"
+    size_lab <- "log10(element count)"; shape_lab <- "TE age group"; color_lab <- "TE family"
     
   } else { # Gene
     plot_df <- base_data %>%
@@ -77,7 +86,7 @@ generate_correlation_plot <- function(data, x_name, y_name, feature_type, te_cla
     }
     point_aes <- aes(color = Family)
     label_var <- "repName"
-    size_lab <- NULL; shape_lab <- NULL; color_lab <- "基因生物类型"
+    size_lab <- NULL; shape_lab <- NULL; color_lab <- "gene biotype"
   }
   
   # --- 筛选需要标注的数据点 (离原点最远的点) ---
@@ -104,10 +113,10 @@ generate_correlation_plot <- function(data, x_name, y_name, feature_type, te_cla
     scale_color_viridis_d(option = "turbo") +
     theme_bw(base_size = 14) +
     labs(
-      title = paste(feature_type, "富集相关性:", x_name, "vs", y_name),
-      subtitle = if(feature_type == "TE") paste("数据点按", label_var, "分组") else "每个数据点代表一个基因",
-      x = paste(x_name, "的富集值 (log2FC vs IgG)"),
-      y = paste(y_name, "的富集值 (log2FC vs IgG)"),
+      title = paste(feature_type, "enrichment correlation:", x_name, "vs", y_name),
+      subtitle = if(feature_type == "TE") paste("data point are grouped by", label_var) else "every data point represent a gene",
+      x = paste(x_name, " enrichment (log2FC vs IgG)"),
+      y = paste(y_name, " enrichment (log2FC vs IgG)"),
       size = size_lab, shape = shape_lab, color = color_lab
     )
   
@@ -118,7 +127,130 @@ generate_correlation_plot <- function(data, x_name, y_name, feature_type, te_cla
   ggsave(file.path(output_dir_path, file_name), p, width = 12, height = 10, dpi = 300, bg = "white")
   
   return(label_data)
+  #if (for_matrix) {
+  #  p <- p +
+  #    theme(
+  #      legend.position = "none",
+  #      plot.title = element_text(size = 10),
+  #      axis.title = element_blank()
+  #    )
+  #}
+  #return(list(data = label_data, plot = p))
+  
 }
+
+
+
+
+
+generate_correlation_matrix_plot <- function(data, feature_type,
+                                             te_classes=NULL, grouping_vars=NULL,
+                                             label_var=NULL, n_labels=10,
+                                             output_file, matrix_samples=NULL) {
+  
+  message("生成整体矩阵图...")
+  
+  if (is.null(matrix_samples)) matrix_samples <- unique(data$sample)
+  sample_pairs <- combn(matrix_samples, 2, simplify = FALSE)
+  
+  all_plot_data <- list()
+  all_label_data <- list()
+  
+  for (pair in sample_pairs) {
+    x_name <- pair[1]; y_name <- pair[2]
+    x_col <- sym(x_name); y_col <- sym(y_name)
+    
+    base_data <- data %>% filter(featureType == feature_type, sample %in% c(x_name, y_name))
+    
+    if (feature_type=="TE") {
+      plot_df <- base_data %>%
+        group_by(across(all_of(grouping_vars))) %>%
+        summarise(
+          x_val = mean(lfc_over_igg[sample==x_name], na.rm=TRUE),
+          y_val = mean(lfc_over_igg[sample==y_name], na.rm=TRUE),
+          n_elements = n()/2,
+          mean_div = mean(milliDiv, na.rm=TRUE),
+          .groups="drop"
+        )
+      if (!identical(te_classes,"all")) plot_df <- plot_df %>% filter(Class %in% te_classes)
+      plot_df <- plot_df %>% filter(n_elements>10)
+      
+      if (nrow(plot_df)<1) next
+      
+      plot_df <- plot_df %>%
+        mutate(age_group=cut(mean_div, breaks=quantile(mean_div, probs=seq(0,1,0.33), na.rm=TRUE),
+                             labels=c("young","mid","old"), include.lowest=TRUE))
+    } else { # Gene 
+      plot_df <- base_data %>%
+      select(sample, repName, Family, lfc_over_igg) %>%
+      pivot_wider(names_from = sample, values_from = lfc_over_igg, values_fn = mean) %>%
+      filter(!is.na(.data[[x_name]]) & !is.na(.data[[y_name]])) %>%
+      rename_with(~c("x_val","y_val"), .cols = c(x_name, y_name))
+      if (nrow(plot_df)<1) next
+    }
+    
+    
+    plot_df <- plot_df %>% mutate(pair=paste(x_name, y_name, sep="_"))
+    
+    label_data <- plot_df %>%
+      mutate(dist_from_origin=sqrt(x_val^2+y_val^2)) %>%
+      slice_max(order_by=dist_from_origin, n=n_labels) %>%
+      mutate(pair=paste(x_name,y_name,sep="_"))
+    
+    all_plot_data[[length(all_plot_data)+1]] <- plot_df
+    all_label_data[[length(all_label_data)+1]] <- label_data
+  }
+  
+  combined_data <- bind_rows(all_plot_data)
+  combined_labels <- bind_rows(all_label_data)
+  
+  # 如果没有有效数据，直接退出
+  if (nrow(combined_data)==0) {
+    message("无有效数据，跳过绘图: ", output_file)
+    return(NULL)
+  }
+  
+  # 为每行生成 row/col
+  combined_data <- combined_data %>%
+    rowwise() %>%
+    mutate(row = factor(strsplit(pair,"_")[[1]][1], levels=matrix_samples),
+           col = factor(strsplit(pair,"_")[[1]][2], levels=matrix_samples)) %>%
+    ungroup()
+  
+  combined_labels <- combined_labels %>%
+    rowwise() %>%
+    mutate(row = factor(strsplit(pair,"_")[[1]][1], levels=matrix_samples),
+           col = factor(strsplit(pair,"_")[[1]][2], levels=matrix_samples)) %>%
+    ungroup()
+  
+  # --- 设置 aes ---
+  if (feature_type=="TE") {
+    geom_point_aes <- aes(color=Family, size=log10(n_elements), shape=age_group)
+  } else {
+    geom_point_aes <- aes(color=Family)
+  }
+  
+  p <- ggplot(combined_data, aes(x=x_val, y=y_val)) +
+    geom_point(geom_point_aes, alpha=0.7) +
+    geom_vline(xintercept=0, linetype="dotted", color="grey50") +
+    geom_hline(yintercept=0, linetype="dotted", color="grey50") +
+    geom_text_repel(data=combined_labels,
+                    aes(x=x_val, y=y_val, label=.data[[label_var]]), size=2.5) +
+    facet_grid(row~col, scales="fixed") +
+    scale_color_viridis_d(option="turbo") +
+    theme_bw(base_size=14) +
+    theme(strip.text=element_text(size=8),
+          axis.title=element_blank(),
+          legend.position="bottom")
+  
+  ggsave(output_file, p, width=20, height=20, bg="white")
+  message("矩阵图保存完成: ", output_file)
+}
+
+
+
+
+
 message("--- 绘图函数定义完成 ---\n")
 
 
@@ -130,6 +262,7 @@ message("=== 第 7 节：开始批量生成相关性分析图表 ===")
 sample_list <- unique(plot_data$sample)
 sample_pairs <- combn(sample_list, 2, simplify = FALSE)
 all_significant_hits <- list()
+all_plots_te_family <- list()
 
 for (pair in sample_pairs) {
   x_name <- pair[1]
@@ -184,122 +317,212 @@ if (length(all_significant_hits) > 0) {
 }
 
 
+# 调用函数
+generate_correlation_matrix_plot(
+  data = plot_data,              
+  feature_type = "TE",          
+  te_classes = TE_CLASSES_OF_INTEREST, 
+  grouping_vars = c("Family", "Class"), 
+  label_var = "Family",        
+  n_labels = N_LABELS_TE_FAMILY,
+  output_file =  file.path(figures_dir, "Correlation_Family_Level/TE_Family_Correlation_Matrix.pdf"),    
+  matrix_samples = unique(plot_data$sample) 
+)
+
+generate_correlation_matrix_plot(
+  data = plot_data,
+  feature_type = "TE",
+  te_classes = TE_CLASSES_OF_INTEREST,
+  grouping_vars = c("repName", "Family", "Class"),
+  label_var = "repName",
+  n_labels = N_LABELS_TE_REPNAME,
+  output_file = file.path(figures_dir, "Correlation_repName_Level/TE_repName_Correlation_Matrix.pdf"),
+  matrix_samples = unique(plot_data$sample)
+)
+
+generate_correlation_matrix_plot(
+  data = plot_data,
+  feature_type = "Gene",
+  grouping_vars = c("repName"),
+  label_var = "repName",
+  n_labels = N_LABELS_GENES,
+  output_file = file.path(figures_dir, "Correlation_Gene_Level/Gene_Correlation_Matrix.pdf"),
+  matrix_samples = unique(plot_data$sample)
+)
+
+
+
 # ==============================================================================
 # ## 第 8 节：特定目标筛选与箱线图可视化 ##
 # ==============================================================================
-message("=== 第 8 节：开始根据指定条件筛选目标并绘制箱线图 ===")
+#message("=== 第 8 节：绘制箱线图 ===")
+message("=== 第 8 节：TE & Gene Heatmap 和 Boxplot 可视化 ===")
 
-# --- 8.1 TE筛选与绘图 ---
-s1 <- SAMPLES_FOR_FILTERING[1]
-s2 <- SAMPLES_FOR_FILTERING[2]
-s3 <- SAMPLES_FOR_FILTERING[3]
+if(!exists("TE_repname_OI")) TE_repname_OI <- NULL
 
-te_df <- plot_data %>%
-  filter(featureType == "TE", sample %in% SAMPLES_FOR_FILTERING) %>%
-  group_by(repName, Family, Class) %>%
-  summarise(
-    !!sym(s1) := mean(lfc_over_igg[sample == s1], na.rm = TRUE),
-    !!sym(s2) := mean(lfc_over_igg[sample == s2], na.rm = TRUE),
-    !!sym(s3) := mean(lfc_over_igg[sample == s3], na.rm = TRUE),
-    n_elements = n() / 3, .groups = "drop"
-  ) %>%
-  filter(n_elements > 10)
-
-te_df_filtered <- te_df %>%
-  filter(
-    .data[[s1]] > median(te_df[[s1]], na.rm = TRUE),
-    .data[[s3]] > median(te_df[[s3]], na.rm = TRUE),
-    .data[[s2]] < median(te_df[[s2]], na.rm = TRUE)
-  )
-
-if (nrow(te_df_filtered) > 0) {
-  filtered_te <- te_df_filtered %>%
-    pivot_longer(cols = all_of(SAMPLES_FOR_FILTERING), names_to = "Sample", values_to = "lfc")
-  
-  p_family <- ggplot(filtered_te, aes(x = Sample, y = lfc, fill = Sample)) +
-    geom_boxplot(outlier.shape = NA, alpha = 0.6) +
-    geom_jitter(aes(color = repName), width = 0.2, size = 2, alpha = 0.8) +
-    facet_wrap(~Family, scales = "free_y") +
-    labs(
-      title = paste("在", s1, "和", s3, "中高富集，在", s2, "中低富集的TE"),
-      x = "样本", y = "富集值 (log2FC vs IgG)", color = "TE 元件"
-    ) +
-    theme_bw(base_size = 14) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right")
-  ggsave(file.path(figures_dir, "Boxplots/TE_Family_filtered_boxplot.png"), p_family, width = 16, height = 12, dpi = 300, bg = "white")
-  message("--- 已生成筛选后的TE箱线图 (按家族划分) ---")
-  
-  # --- 图 8.1b: 按 TE 元件 (repName) 划分的点图 (新增加) ---
-  p_repname <- ggplot(filtered_te, aes(x = Sample, y = lfc, color = Sample)) +
-    # 使用点图展示每个样本的精确LFC值
-    geom_point(size = 4, alpha = 0.8) +
-    # 用线连接同一个repName在不同样本中的点，以展示变化趋势
-    geom_line(aes(group = repName), color = "grey60", linetype = "dashed", alpha = 0.7) +
-    # 每个面板(facet)代表一个独立的repName
-    facet_wrap(~repName, scales = "free_y") +
-    labs(
-      title = paste("在", s1, "和", s3, "中高富集，在", s2, "中低富集的TE"),
-      subtitle = "按TE元件(repName)独立展示",
-      x = "样本", y = "富集值 (log2FC vs IgG)"
-    ) +
-    theme_bw(base_size = 14) +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      legend.position = "none", # X轴和颜色信息重复，移除图例
-      strip.background = element_rect(fill = "lightblue", color = "black"), # 美化分面标题
-      strip.text = element_text(face = "bold", size = 10)
-    )
-  
-  ggsave(
-    file.path(figures_dir, "Boxplots/TE_repName_filtered_dotplot.png"),
-    p_repname,
-    width = 18,
-    height = 18,
-    dpi = 300,
-    bg = "white"
-  )
-  message("--- 已生成筛选后的TE点图 (按元件repName划分) ---")
-  
+# --- TE 数据 ---
+te_data <- plot_data %>%
+  filter(featureType=="TE", Class %in% TE_CLASSES_OF_INTEREST)
+if(!is.null(TE_repname_OI) && length(TE_repname_OI)>0 && any(TE_repname_OI != "")){
+  te_data_rep <- te_data %>% filter(repName %in% TE_repname_OI)
 } else {
-  message("--- 未找到符合筛选条件的TE ---")
+  te_data_rep <- te_data
+}
+message(TE_repname_OI)
+
+# --- Gene 数据 ---
+gene_data <- plot_data %>%
+  filter(featureType=="Gene")
+
+# --- 函数：计算相关性矩阵 ---
+compute_cor_matrix <- function(df, value_col="lfc_over_igg"){
+  samples <- unique(df$sample)
+  cor_mat <- matrix(NA, nrow=length(samples), ncol=length(samples),
+                    dimnames=list(samples, samples))
+  sample_pairs <- combn(samples,2,simplify=FALSE)
+  for(pair in sample_pairs){
+    x <- pair[1]; y <- pair[2]
+    x_vals <- df %>% filter(sample==x) %>% pull({{value_col}})
+    y_vals <- df %>% filter(sample==y) %>% pull({{value_col}})
+    cor_mat[x,y] <- cor(x_vals, y_vals, use="complete.obs")
+    cor_mat[y,x] <- cor_mat[x,y]
+  }
+  diag(cor_mat) <- 1
+  as.data.frame(as.table(cor_mat)) %>%
+    setNames(c("Sample1","Sample2","Correlation"))
 }
 
-# --- 8.2 基因筛选与绘图 ---
-gene_df <- plot_data %>%
-  filter(featureType == "Gene") %>%
-  select(sample, repName, lfc_over_igg) %>%
-  pivot_wider(names_from = sample, values_from = lfc_over_igg, values_fn = mean) %>%
-  filter(if_all(all_of(SAMPLES_FOR_FILTERING), ~ !is.na(.)))
+# ================= TE 图 =================
+if(nrow(te_data)>0){
 
-gene_df_filtered <- gene_df %>%
-  filter(
-    .data[[s1]] > median(gene_df[[s1]], na.rm = TRUE),
-    .data[[s3]] > median(gene_df[[s3]], na.rm = TRUE),
-    .data[[s2]] < median(gene_df[[s2]], na.rm = TRUE)
-  ) %>%
-  filter(.data[[s1]] > 0.7, .data[[s3]] > 0.7, .data[[s2]] < -0.2) # 更严格的阈值
+  samples <- unique(te_data$sample)
 
-if (nrow(gene_df_filtered) > 0) {
-  samples_to_plot <- intersect(SAMPLES_FOR_GENE_BOXPLOT, colnames(gene_df_filtered))
-  filtered_gene <- gene_df_filtered %>%
-    pivot_longer(cols = all_of(samples_to_plot), names_to = "Sample", values_to = "lfc") %>%
-    mutate(Sample = factor(Sample, levels = SAMPLES_FOR_GENE_BOXPLOT)) # 保持样本顺序
+  # --- 总体 Heatmap ---
+  cor_long <- compute_cor_matrix(te_data)
+  p_heatmap <- ggplot(cor_long, aes(x=Sample1, y=Sample2, fill=Correlation)) +
+    geom_tile(color="white") +
+    geom_text(aes(label=round(Correlation,2)), size=3) +
+    scale_fill_viridis_c(option="C", limits=c(-1,1)) +
+    theme_minimal() +
+    labs(title="TE Correlation Heatmap (All TE Classes)")
+  ggsave(file.path(figures_dir,"Heatmaps","TE_All_Heatmap.png"), p_heatmap, width=8, height=6)
+
+  # --- 总体 Boxplot ---
+  p_box <- ggplot(te_data, aes(x=sample, y=lfc_over_igg, fill=sample)) +
+    geom_boxplot() +
+    theme_bw(base_size=14) +
+    labs(title="TE log2FC distribution across samples", x="Sample", y="log2FC vs IgG") +
+    theme(legend.position="none")
+  ggsave(file.path(figures_dir,"Boxplots","TE_All_Boxplot.png"), p_box, width=8, height=6)
+
+  # --- 按 Family (Class facet) Boxplot ---
+  p_box_family <- ggplot(te_data, aes(x=sample, y=lfc_over_igg, fill=sample)) +
+    geom_boxplot() +
+    facet_wrap(~Family, scales="free_y") +
+    theme_bw(base_size=12) +
+    labs(title="TE log2FC by Family", x="Sample", y="log2FC vs IgG") +
+    theme(legend.position="none")
+  ggsave(file.path(figures_dir,"Boxplots","TE_Boxplot_by_Family.png"), p_box_family, width=12, height=8)
   
-  p_gene <- ggplot(filtered_gene, aes(x = Sample, y = lfc, color = Sample)) +
-    geom_point(size = 3.5, alpha = 0.9) +
-    geom_line(aes(group = repName), color = "grey80", alpha = 0.7) +
-    facet_wrap(~repName, scales = "free_y") +
-    labs(
-      title = paste("在", s1, "和", s3, "中高富集，在", s2, "中低富集的基因"),
-      x = "样本", y = "富集值 (log2FC vs IgG)"
-    ) +
-    theme_bw(base_size = 14) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-  ggsave(file.path(figures_dir, "Boxplots/Gene_filtered_dotplot.png"), p_gene, width = 14, height = 14, dpi = 300, bg = "white")
-  message("--- 已生成筛选后的基因点图 ---")
-} else {
-  message("--- 未找到符合筛选条件的基因 ---")
+  p_box_class <- ggplot(te_data, aes(x=sample, y=lfc_over_igg, fill=sample)) +
+    geom_boxplot() +
+    facet_wrap(~Class, scales="free_y") +
+    theme_bw(base_size=12) +
+    labs(title="TE log2FC by Class", x="Sample", y="log2FC vs IgG") +
+    theme(legend.position="none")
+  ggsave(file.path(figures_dir,"Boxplots","TE_Boxplot_by_Class.png"), p_box_class, width=12, height=8)
+
+  # --- 按 repName Boxplot ---
+  p_box_repname <- ggplot(te_data_rep, aes(x=sample, y=lfc_over_igg, fill=sample)) +
+    geom_boxplot() +
+    facet_wrap(~repName, scales="free_y") +
+    theme_bw(base_size=10) +
+    labs(title="TE log2FC by repName", x="Sample", y="log2FC vs IgG") +
+    theme(legend.position="none")
+  ggsave(file.path(figures_dir,"Boxplots","TE_Boxplot_by_repName.png"), p_box_repname, width=16, height=12)
+
+  # --- 按 Class facet Heatmap ---
+  cor_class_list <- list()
+  for(cl in unique(te_data$Class)){
+    df_cl <- te_data %>% filter(Class==cl)
+    cor_cl <- compute_cor_matrix(df_cl)
+    cor_cl$Class <- cl
+    cor_class_list[[length(cor_class_list)+1]] <- cor_cl
+  }
+  cor_class_long <- bind_rows(cor_class_list)
+  p_heatmap_class <- ggplot(cor_class_long, aes(x=Sample1, y=Sample2, fill=Correlation)) +
+    geom_tile(color="white") +
+    geom_text(aes(label=round(Correlation,2)), size=2.5) +
+    scale_fill_viridis_c(option="C", limits=c(-1,1)) +
+    facet_wrap(~Class) +
+    theme_minimal() +
+    labs(title="TE Correlation Heatmap by Class")
+  ggsave(file.path(figures_dir,"Heatmaps","TE_Heatmap_by_Class.png"), p_heatmap_class, width=12, height=10)
+  
+  cor_family_list <- list()
+  for(fa in unique(te_data$Family)){
+    df_fa <- te_data %>% filter(Family == fa)
+    cor_fa <- compute_cor_matrix(df_fa)
+    cor_fa$Family <- fa
+    cor_family_list[[length(cor_family_list)+1]] <- cor_fa
+  }
+  cor_family_long <- bind_rows(cor_family_list)
+  p_heatmap_family <- ggplot(cor_family_long, aes(x = Sample1, y = Sample2, fill = Correlation)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = round(Correlation, 2)), size = 2.5) +
+    scale_fill_viridis_c(option = "C", limits = c(-1, 1)) +
+    facet_wrap(~Family) +
+    theme_minimal() +
+    labs(title = "TE Correlation Heatmap by Family")
+  ggsave(file.path(figures_dir, "Heatmaps", "TE_Heatmap_by_Family.png"), p_heatmap_family, width = 12, height = 10)
+
+  # --- 按 repName facet Heatmap ---
+  cor_rep_list <- list()
+  for(rep in unique(te_data_rep$repName)){
+    df_rep <- te_data %>% filter(repName==rep)
+    cor_rep <- compute_cor_matrix(df_rep)
+    cor_rep$repName <- rep
+    cor_rep_list[[length(cor_rep_list)+1]] <- cor_rep
+  }
+  cor_rep_long <- bind_rows(cor_rep_list)
+  p_heatmap_rep <- ggplot(cor_rep_long, aes(x=Sample1, y=Sample2, fill=Correlation)) +
+    geom_tile(color="white") +
+    geom_text(aes(label=round(Correlation,2)), size=2.5) +
+    scale_fill_viridis_c(option="C", limits=c(-1,1)) +
+    facet_wrap(~repName) +
+    theme_minimal() +
+    labs(title="TE Correlation Heatmap by repName")
+  ggsave(file.path(figures_dir,"Heatmaps","TE_Heatmap_by_repName.png"), p_heatmap_rep, width=16, height=12)
+
+  message("--- TE Heatmap 和 Boxplot 已完成 ---")
 }
+
+# ================= Gene 图 =================
+if(nrow(gene_data)>0){
+
+  samples <- unique(gene_data$sample)
+
+  # --- Gene 总体 Heatmap ---
+  cor_long_gene <- compute_cor_matrix(gene_data)
+  p_heatmap_gene <- ggplot(cor_long_gene, aes(x=Sample1, y=Sample2, fill=Correlation)) +
+    geom_tile(color="white") +
+    geom_text(aes(label=round(Correlation,2)), size=3) +
+    scale_fill_viridis_c(option="C", limits=c(-1,1)) +
+    theme_minimal() +
+    labs(title="Gene Correlation Heatmap")
+  ggsave(file.path(figures_dir,"Heatmaps","Gene_All_Heatmap.png"), p_heatmap_gene, width=8, height=6)
+
+  # --- Gene 总体 Boxplot ---
+  p_box_gene <- ggplot(gene_data, aes(x=sample, y=lfc_over_igg, fill=sample)) +
+    geom_boxplot() +
+    theme_bw(base_size=14) +
+    labs(title="Gene log2FC distribution across samples", x="Sample", y="log2FC vs IgG") +
+    theme(legend.position="none")
+  ggsave(file.path(figures_dir,"Boxplots","Gene_All_Boxplot.png"), p_box_gene, width=8, height=6)
+
+  message("--- Gene Heatmap 和 Boxplot 已完成 ---")
+}
+
 
 message("--- 第 8 节分析完成 ---\n")
 
