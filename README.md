@@ -53,7 +53,6 @@ bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用�
 sbatch my_count_draw.slurm
 ```
 结果可在输出文件夹的 `result` 文件夹中查看。  
-~~**注意：目前仅有 `hg38` 和 `mm39` 参考基因组可使用， `mm10` 将随后更新**~~
 参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
 
 
@@ -159,9 +158,9 @@ sbatch bam_cor.slurm <bam_dir> <outprefix> <binsize>
 sbatch homer.slurm <input_file> <ref>
 ```
 `ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
-### ~~pca~~
-~~（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。~~  
-计划更新normlize版本并加入到TEsalmon处理中
+### pca
+（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。  
+**计划更新normlize版本**
 ### dump
 复制 `dump.slurm` 到自己的文件夹并修改参数，使用如下命令提交
 ```bash
@@ -352,13 +351,12 @@ bam_cor <bam_dir> <outprefix> <binsize>
 homer_anno <input_file> <ref>
 ```
 `ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
-### ~~zhaolabpca~~
-~~（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。~~  
-~~使用如下命令提交~~
-~~```bash~~
-~~PCA <input_file>~~
-~~```~~
-计划更新normlize版本并加入到TEsalmon处理中
+### zhaolabpca 
+使用如下命令提交
+```bash
+PCA <input_file>
+```
+**计划更新normlize版本**
 ### zhaolabdump
 使用如下命令提交
 ```bash
