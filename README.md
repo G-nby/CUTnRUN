@@ -159,8 +159,11 @@ sbatch homer.slurm <input_file> <ref>
 ```
 `ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
 ### pca
-（复制到自己的文件夹中，修改参数）vim进入文件，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。  
-**计划更新normlize版本**
+（复制到自己的文件夹中，修改参数）vim进入文件pca.slurm，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。  
+此为对rawdata直接进行PCA的版本，可使用下方的VST处理后版本。
+### pcaVST
+（复制到自己的文件夹中，修改参数）vim进入文件pcaVST.slurm，修改语句最后提交文件为自己的 `EXPR.csv` 文件路径，然后使用 `sbatch` 命令提交即可。  
+此为对raw data通过DEseq2进行了VST处理后再进行PCA的版本，推荐使用这一新版本
 ### dump
 复制 `dump.slurm` 到自己的文件夹并修改参数，使用如下命令提交
 ```bash
