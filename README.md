@@ -15,6 +15,7 @@ backup basic pipelines on acluster
   - [bw_cor/bam_cor](#bw_corbam_cor)
   - [homer](#homer)
   - [pca](#pca)
+  - [pcaVST](#pcavst)
   - [dump](#dump)
 - [zhaolab server usage](#zhaolab-server-usage)
 
