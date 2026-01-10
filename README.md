@@ -188,6 +188,7 @@ sbatch my_dump.slurm
   - [bw_cor/bam_cor](#zhaolabbw_corbam_cor)
   - [homer](#zhaolabhomer)
   - [pca](#zhaolabpca)
+  - [pcaVST](#zhaolabpcavst)
   - [dump](#zhaolabdump)
  
 ## zhaolabCUTRUN
@@ -356,11 +357,19 @@ homer_anno <input_file> <ref>
 ```
 `ref` 为参考物种基因组名称，hg38/mm10为默认注释。可使用TEhg38/TEmm10进行TE注释
 ### zhaolabpca 
+使用 `conda activate TEsalmon` 激活的环境
 使用如下命令提交
 ```bash
 PCA <input_file>
 ```
-**计划更新normlize版本**
+此为对rawdata直接进行PCA的版本，可使用下方的VST处理后版本。
+### zhaolabpcaVST
+使用 `conda activate TEsalmon` 激活的环境
+使用如下命令提交
+```bash
+PCAVST <input_file>
+```  
+此为对raw data通过DEseq2进行了VST处理后再进行PCA的版本，推荐使用这一新版本
 ### zhaolabdump
 使用如下命令提交
 ```bash
