@@ -6,16 +6,12 @@ suppressPackageStartupMessages(library(WriteXLS))
 suppressPackageStartupMessages(library(stringr))  #Bo modified
 suppressPackageStartupMessages(library(edgeR))  #gby modified
 
-write.results <- function(dat, keep_samples = NULL) {
+write.results <- function(dat) {
   res <- dat$res
   summary <- dat$summary
   sheet.fmt <- dat$sheet.fmt
   path <- dat$path
   norm_counts_df <- dat$norm_counts # gby modified
-  #message(keep_samples)
-  if (!is.null(keep_samples)) {
-    norm_counts_df <- norm_counts_df %>% select(name, all_of(keep_samples))
-  }
   norm_counts_res <- left_join(norm_counts_df, res, by = "name") # gby modified
   res_filtered <- res[res$class != "Simple_repeat", ] # gby modified0924
   norm_counts_res_filtered <- norm_counts_res[norm_counts_res$class != "Simple_repeat", ] # gby modified0924
@@ -54,7 +50,7 @@ write.figures <- function(dat) {
 }
 
 
-do.deseq2 <- function(dat, BCV = 0.1, contrast_levels) {
+do.deseq2 <- function(dat, BCV = 0.1) {
   if (!requireNamespace("edgeR", quietly = TRUE)) {
     stop("Please install package 'edgeR'")
   }
@@ -62,172 +58,75 @@ do.deseq2 <- function(dat, BCV = 0.1, contrast_levels) {
   #message(head(count))
   #message(str(dat))
   #message(fixed_dispersion)
-  #if(ncol(count) != 2) stop("do.deseq2 expects count matrix with exactly 2 samples (ctrl,treat).")
+  if(ncol(count) != 2) stop("do.deseq2 expects count matrix with exactly 2 samples (ctrl,treat).")
   sample_names <- colnames(count)
-  #ctrl_name <- sample_names[1]
-  #treat_name <- sample_names[2]
-  ctrl_name <- contrast_levels[1]
-  treat_name <- contrast_levels[2]
+  ctrl_name <- sample_names[1]
+  treat_name <- sample_names[2]
   message(ctrl_name)
   message(treat_name)
 
   # build DGEList and normalize
   d <- edgeR::DGEList(counts = round(as.matrix(count)))
+  #d$samples$group <- factor(c("ctrl","treat"))
+  d$samples$group <- factor(c(ctrl_name, treat_name),
+                          levels = c(ctrl_name, treat_name))
   d <- edgeR::calcNormFactors(d, method = "TMM")
-  
-  effective_lib_size <- d$samples$lib.size * d$samples$norm.factors
-  mean_lib_size <- mean(effective_lib_size)
-  
-  norm_counts <- sweep(d$counts, 2, effective_lib_size / mean_lib_size, "/")
-  norm_counts_df <- as.data.frame(norm_counts) %>% tibble::rownames_to_column(var = "name")
-  
-  #norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-  #norm_counts_df <- as.data.frame(norm_counts) %>% tibble::rownames_to_column(var = "name")
-  
-  d_sub <- d[, c(ctrl_name, treat_name)]
-  d_sub$samples$group <- factor(c("ctrl", "treat"), levels = c("ctrl", "treat"))
-  
-  disp <- as.numeric(BCV)^2
-  et <- edgeR::exactTest(d_sub, dispersion = disp)
-  
-  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-  
-  df_res <- data.frame(
-    name = rownames(d_sub),
-    log2FoldChange = tbl$logFC,
-    pvalue = tbl$PValue,
-    baseMean = rowMeans(norm_counts[, c(ctrl_name, treat_name)]),
-    stringsAsFactors = FALSE
-  )
-  
-  df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
 
-  dat$res <- df_res
-  dat$norm_counts <- norm_counts_df 
-  
-  message("do.deseq2 (edgeR single-sample) done. Using BCV = ", BCV)
-  return(dat)
-  
-  ##d$samples$group <- factor(c("ctrl","treat"))
-  #d$samples$group <- factor(c(ctrl_name, treat_name),
-  #                        levels = c(ctrl_name, treat_name))
-  #keep <- edgeR::filterByExpr(d, group = d$samples$group)
-  #d <- d[keep, , keep.lib.sizes=FALSE]
-  #d <- edgeR::calcNormFactors(d, method = "TMM")
+  # normalized CPM
+  norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
+  norm_counts_df <- data.frame(norm_counts, check.names = FALSE)
+  norm_counts_df <- tibble::rownames_to_column(norm_counts_df, var = "name")
 
-  ## normalized CPM
-  #norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-  #norm_counts_df <- data.frame(norm_counts, check.names = FALSE)
-  #norm_counts_df <- tibble::rownames_to_column(norm_counts_df, var = "name")
-
-  ## compute log2FC (treat / ctrl) , pseudo for 0 cannot bu divisor
-  #pseudo <- 1
-  #log2FC_vec <- log2((norm_counts[, treat_name] + pseudo) / (norm_counts[, ctrl_name] + pseudo))
+  # compute log2FC (treat / ctrl) , pseudo for 0 cannot bu divisor
+  pseudo <- 1
+  log2FC_vec <- log2((norm_counts[, treat_name] + pseudo) / (norm_counts[, ctrl_name] + pseudo))
 
   # produce fake p-values via exactTest with fixed dispersion
   # BCV 0.4 for human , 0.1 for other model animals
   #message("BCV class = ", class(BCV))
   #message("BCV value = ", BCV)
-  #BCV <- as.numeric(BCV)  
-  #disp <- BCV^2
-  #et <- tryCatch({
-  #  edgeR::exactTest(d, dispersion = disp)   # BCV^2 嘉頁 dispersion
-  #}, error = function(e) {
-  #  message("edgeR exactTest failed: ", e$message)
-  #  NULL
-  #})
+  BCV <- as.numeric(BCV)  
+  disp <- BCV^2
+  et <- tryCatch({
+    edgeR::exactTest(d, dispersion = disp)   # BCV^2 嘉頁 dispersion
+  }, error = function(e) {
+    message("edgeR exactTest failed: ", e$message)
+    NULL
+  })
 
-  #if(!is.null(et)) {
-  #  #tbl <- as.data.frame(edgeR::topTags(et, n = nrow(count), sort.by = "none")) # preserve order
-  #  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-  #  # topTags returns logFC as log2(treat/ctrl) if pair set correctly
-  #  pval <- tbl$PValue
-  #} else {
-  #  pval <- rep(NA, nrow(count))
-  #  #tbl <- data.frame(logFC = log2FC_vec, PValue = pval)
-  #}
+  if(!is.null(et)) {
+    tbl <- as.data.frame(edgeR::topTags(et, n = nrow(count), sort.by = "none")) # preserve order
+    # topTags returns logFC as log2(treat/ctrl) if pair set correctly
+    pval <- tbl$PValue
+  } else {
+    pval <- rep(NA, nrow(count))
+    tbl <- data.frame(logFC = log2FC_vec, PValue = pval)
+  }
   
-  ##message(str(et))
-  ##message(str(tbl))
-  ##message(str(pval))
-  ## assemble result dataframe
-  #df_res <- data.frame(
-  #  #name = rownames(count),
-  #  name = rownames(d),
-  #  log2FoldChange = as.numeric(log2FC_vec),
-  #  pvalue = as.numeric(pval),
-  #  baseMean = rowMeans(norm_counts)
-  #, stringsAsFactors = FALSE)
-  ##message(str(df_res))
+  #message(str(et))
+  #message(str(tbl))
+  #message(str(pval))
+  # assemble result dataframe
+  df_res <- data.frame(
+    name = rownames(count),
+    log2FoldChange = as.numeric(log2FC_vec),
+    pvalue = as.numeric(pval),
+    baseMean = rowMeans(norm_counts)
+  , stringsAsFactors = FALSE)
+  #message(str(df_res))
   
 
-  #df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
+  df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
 
-  #dat$res <- df_res
-  #dat$norm_counts <- norm_counts_df
-  #dat$dds <- NULL
+  dat$res <- df_res
+  dat$norm_counts <- norm_counts_df
+  dat$dds <- NULL
 
-  #message("do.deseq2 (edgeR fallback) done. Using BCV = ", BCV)
-  #dat
+  message("do.deseq2 (edgeR fallback) done. Using BCV = ", BCV)
+  dat
   #message(str(dat))
 }
 
-#do.deseq2 <- function(dat, BCV = 0.1) {
-#  if (!requireNamespace("edgeR", quietly = TRUE)) {
-#    stop("Please install package 'edgeR'")
-#  }
-#  
-#  count <- dat$count
-#  if(ncol(count) != 2) stop("do.deseq2 expects exactly 2 samples.")
-#  
-#  sample_names <- colnames(count)
-#  ctrl_name <- sample_names[1]
-#  treat_name <- sample_names[2]
-#
-#  # 1. 真 DGEList
-#  d <- edgeR::DGEList(counts = round(as.matrix(count)))
-#  d$samples$group <- factor(c(ctrl_name, treat_name), levels = c(ctrl_name, treat_name))
-#  
-#  # 2. 真真 (真 min.count=15)
-#  keep <- edgeR::filterByExpr(d, group = d$samples$group, min.count = 15)
-#  d <- d[keep, , keep.lib.sizes=FALSE]
-#  d <- edgeR::calcNormFactors(d, method = "TMM")
-#
-#  # 3. 真真?CPM (真真)
-#  norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-#  norm_counts_df <- data.frame(norm_counts, check.names = FALSE) %>% 
-#    tibble::rownames_to_column(var = "name")
-#
-#  # 4. 真 predFC 真?Design Matrix
-#  # 真真?edgeR 真真真1真真真2真真
-#  design <- model.matrix(~d$samples$group) 
-#  
-#  # 5. 真真真 log2FC
-#  BCV <- as.numeric(BCV)
-#  # 真 predFC 真真真?0 真?#  lfc_matrix <- edgeR::predFC(d, design = design, dispersion = BCV^2, prior.count = 2)
-#  # 真真?log2FoldChange
-#  log2FC_val <- lfc_matrix[, 2]
-#
-#  # 6. 真真真 P ?#  et <- edgeR::exactTest(d, dispersion = BCV^2)
-#  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-#  
-#  # 7. 真真
-#  df_res <- data.frame(
-#    name = rownames(d),
-#    log2FoldChange = as.numeric(log2FC_val),
-#    pvalue = as.numeric(tbl$PValue),
-#    baseMean = rowMeans(norm_counts),
-#    stringsAsFactors = FALSE
-#  )
-#  df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
-#
-#  dat$res <- df_res
-#  dat$norm_counts <- norm_counts_df
-#  dat$dds <- NULL 
-
-#  message("do.deseq2 (edgeR predFC) fixed. Using BCV = ", BCV)
-#  return(dat)
-#}
 
 do.summary <- function(dat) {
   calc.stat <- function(group) {
@@ -573,8 +472,8 @@ SalmonTE <- function(count, samples, annotation, col_data,
                      BCV,
                      sheet.fmt = "csv", fig.fmt = "pdf", path = ".", log2fc_min = 0.5,
                      pvalmax = 0.05) {
-  #col_data <- col_data[samples, , drop = FALSE]
-  #count <- count[, samples, drop = FALSE]
+  col_data <- col_data[samples, , drop = FALSE]
+  count <- count[, samples, drop = FALSE]
   dat <- list(
     count = count, 
     col_data = col_data
@@ -582,10 +481,10 @@ SalmonTE <- function(count, samples, annotation, col_data,
   dat$log2fc_min <- log2fc_min
   dat$pvalmax    <- pvalmax
 
-  #if(!is.null(samples)) {
-  #  rownames(dat$col_data) <- factor(rownames(dat$col_data), level = samples)
-  #}
-  dat <- do.deseq2(dat,BCV, contrast_levels = samples)
+  if(!is.null(samples)) {
+    rownames(dat$col_data) <- factor(rownames(dat$col_data), level = samples)
+  }
+  dat <- do.deseq2(dat,BCV)
   dat$y.name <- "log2FoldChange"
   dat$annotation <- annotation
   dat$sheet.fmt <- sheet.fmt
@@ -608,8 +507,8 @@ SalmonTE <- function(count, samples, annotation, col_data,
   dat
 }
 
-GenerateOutput <- function(dat, keep_samples) {
-  write.results(dat, keep_samples)
+GenerateOutput <- function(dat) {
+  write.results(dat)
   write.figures(dat)
   save(dat, file = file.path(dat$path, "data.Rdata"))
 }
@@ -631,12 +530,12 @@ count <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = 
 col_data <- read.csv(file.path(args[1], "condition.csv"), row.names = "SampleID")
 keep_samples <- rownames(col_data)[rownames(col_data) %in% samples] #filter wanted cols  # gby added
 message(keep_samples)
-#count <- count[, keep_samples, drop = FALSE]  # gby added
-#col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
+count <- count[, keep_samples, drop = FALSE]  # gby added
+col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
 annotation <- read.csv(file.path(args[1], "clades.csv"))
 #message(sprintf("Step 3: Running the %s analysis...", analysis))
 dat <- SalmonTE(count, samples, annotation, col_data, BCV, args[2], args[3], args[4],log2fc_min, pvalmax)
 
 message(sprintf("Step 4: Generating output..."))
-suppressMessages(GenerateOutput(dat, keep_samples = keep_samples))
+suppressMessages(GenerateOutput(dat))
 message(sprintf("Step 5: The statistical analysis has been completed. Please check '%s' directory to see the analysis result!", args[4]))

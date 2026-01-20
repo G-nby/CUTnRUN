@@ -4,18 +4,13 @@ suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(WriteXLS))
 suppressPackageStartupMessages(library(stringr))  #Bo modified
-suppressPackageStartupMessages(library(edgeR))  #gby modified
 
-write.results <- function(dat, keep_samples = NULL) {
+write.results <- function(dat) {
   res <- dat$res
   summary <- dat$summary
   sheet.fmt <- dat$sheet.fmt
   path <- dat$path
   norm_counts_df <- dat$norm_counts # gby modified
-  #message(keep_samples)
-  if (!is.null(keep_samples)) {
-    norm_counts_df <- norm_counts_df %>% select(name, all_of(keep_samples))
-  }
   norm_counts_res <- left_join(norm_counts_df, res, by = "name") # gby modified
   res_filtered <- res[res$class != "Simple_repeat", ] # gby modified0924
   norm_counts_res_filtered <- norm_counts_res[norm_counts_res$class != "Simple_repeat", ] # gby modified0924
@@ -47,187 +42,114 @@ write.figures <- function(dat) {
   ggsave(file.path(path, paste0("pdist.plot.", ext)), dat$summary$pdist.plot)
   ggsave(file.path(path, paste0("pval_volcano.plot.", ext)), dat$summary$pval_volcano.plot)
   ggsave(file.path(path, paste0("pval_ma.plot.", ext)), dat$summary$pval_ma.plot)
-  ggsave(file.path(path, paste0("corr.name.", ext)), dat$summary$corr.name)
-  ggsave(file.path(path, paste0("corr.name.log2fc.", ext)), dat$summary$corr.log2fc)
-  ggsave(file.path(path, paste0("corr.clade.", ext)), dat$summary$corr.clade)
-  ggsave(file.path(path, paste0("corr.class.", ext)), dat$summary$corr.class)
 }
 
 
-do.deseq2 <- function(dat, BCV = 0.1, contrast_levels) {
-  if (!requireNamespace("edgeR", quietly = TRUE)) {
-    stop("Please install package 'edgeR'")
-  }
-  count <- dat$count
-  #message(head(count))
-  #message(str(dat))
-  #message(fixed_dispersion)
-  #if(ncol(count) != 2) stop("do.deseq2 expects count matrix with exactly 2 samples (ctrl,treat).")
-  sample_names <- colnames(count)
-  #ctrl_name <- sample_names[1]
-  #treat_name <- sample_names[2]
-  ctrl_name <- contrast_levels[1]
-  treat_name <- contrast_levels[2]
-  message(ctrl_name)
-  message(treat_name)
+#do.deseq2 <- function(dat) {
+#  count <- dat$count
+#  col_data <- dat$col_data
+#  dds <- DESeqDataSetFromMatrix(countData = round(count),
+#                                colData = col_data,
+#                                design = ~condition)
+#  dds <- dds[ rowSums(counts(dds)) > 10, ]
+#  dds <- DESeq(dds)
+#  res <- results(dds)
+#  df_res <- data.frame(res)
+#  dat$res <- df_res %>% rownames_to_column("name")
+#  dat$dds <- dds
+#  
+#  message(sprintf("herehereherehereherehereherehere:"))
+#  message("Available resultsNames: ", paste(resultsNames(dds), collapse = ", "))
+#  
+#  res$padj < 0.01 & abs(res$log2FoldChange) > 0.5
+#  dat
+#}
 
-  # build DGEList and normalize
-  d <- edgeR::DGEList(counts = round(as.matrix(count)))
-  d <- edgeR::calcNormFactors(d, method = "TMM")
+# gby modified,for valid with chushai dispersion error
+do.deseq2 <- function(dat) {
+  count <- dat$count
+  col_data <- dat$col_data
+  dds <- DESeqDataSetFromMatrix(countData = round(count),
+                                colData = col_data,
+                                design = ~condition)
+  dds <- dds[rowSums(counts(dds)) > 10, ]
   
-  effective_lib_size <- d$samples$lib.size * d$samples$norm.factors
-  mean_lib_size <- mean(effective_lib_size)
-  
-  norm_counts <- sweep(d$counts, 2, effective_lib_size / mean_lib_size, "/")
-  norm_counts_df <- as.data.frame(norm_counts) %>% tibble::rownames_to_column(var = "name")
-  
-  #norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-  #norm_counts_df <- as.data.frame(norm_counts) %>% tibble::rownames_to_column(var = "name")
-  
-  d_sub <- d[, c(ctrl_name, treat_name)]
-  d_sub$samples$group <- factor(c("ctrl", "treat"), levels = c("ctrl", "treat"))
-  
-  disp <- as.numeric(BCV)^2
-  et <- edgeR::exactTest(d_sub, dispersion = disp)
-  
-  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-  
-  df_res <- data.frame(
-    name = rownames(d_sub),
-    log2FoldChange = tbl$logFC,
-    pvalue = tbl$PValue,
-    baseMean = rowMeans(norm_counts[, c(ctrl_name, treat_name)]),
-    stringsAsFactors = FALSE
+  dds <- tryCatch(
+    {
+      DESeq(dds)
+    },
+    error = function(e) {
+      message("Caught error message:")
+      message(e$message)
+      
+      if (grepl("invalid 'x'", e$message)) {
+      message("!! Loess failed, retrying with fitType='mean' ...")
+      dds <- DESeq(dds, fitType="mean")
+      return(dds)
+      }
+      
+      if (grepl("newsplit: out of vertex space", e$message)) {
+      message("!! I guess Locfit failed, retrying with fitType='mean' ...")
+      dds <- DESeq(dds, fitType="mean")
+      return(dds)
+      }
+      
+      if (grepl("all gene-wise dispersion estimates", e$message)) {
+        message("!!Dispersion fit failed, using gene-wise estimates instead...")
+        dds <- estimateSizeFactors(dds)
+        dds <- estimateDispersionsGeneEst(dds)
+        dispersions(dds) <- mcols(dds)$dispGeneEst
+        dds <- nbinomWaldTest(dds)
+        return(dds)
+      } 
+      
+      else {
+        stop(e)
+      }
+    }
   )
   
-  df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
-
-  dat$res <- df_res
-  dat$norm_counts <- norm_counts_df 
+  res <- results(dds)
+  df_res <- data.frame(res)
   
-  message("do.deseq2 (edgeR single-sample) done. Using BCV = ", BCV)
-  return(dat)
+  norm_counts <- counts(dds, normalized = TRUE)
+  norm_counts_df <- data.frame(norm_counts)
   
-  ##d$samples$group <- factor(c("ctrl","treat"))
-  #d$samples$group <- factor(c(ctrl_name, treat_name),
-  #                        levels = c(ctrl_name, treat_name))
-  #keep <- edgeR::filterByExpr(d, group = d$samples$group)
-  #d <- d[keep, , keep.lib.sizes=FALSE]
-  #d <- edgeR::calcNormFactors(d, method = "TMM")
-
-  ## normalized CPM
-  #norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-  #norm_counts_df <- data.frame(norm_counts, check.names = FALSE)
-  #norm_counts_df <- tibble::rownames_to_column(norm_counts_df, var = "name")
-
-  ## compute log2FC (treat / ctrl) , pseudo for 0 cannot bu divisor
-  #pseudo <- 1
-  #log2FC_vec <- log2((norm_counts[, treat_name] + pseudo) / (norm_counts[, ctrl_name] + pseudo))
-
-  # produce fake p-values via exactTest with fixed dispersion
-  # BCV 0.4 for human , 0.1 for other model animals
-  #message("BCV class = ", class(BCV))
-  #message("BCV value = ", BCV)
-  #BCV <- as.numeric(BCV)  
-  #disp <- BCV^2
-  #et <- tryCatch({
-  #  edgeR::exactTest(d, dispersion = disp)   # BCV^2 嘉頁 dispersion
-  #}, error = function(e) {
-  #  message("edgeR exactTest failed: ", e$message)
-  #  NULL
-  #})
-
-  #if(!is.null(et)) {
-  #  #tbl <- as.data.frame(edgeR::topTags(et, n = nrow(count), sort.by = "none")) # preserve order
-  #  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-  #  # topTags returns logFC as log2(treat/ctrl) if pair set correctly
-  #  pval <- tbl$PValue
-  #} else {
-  #  pval <- rep(NA, nrow(count))
-  #  #tbl <- data.frame(logFC = log2FC_vec, PValue = pval)
-  #}
   
-  ##message(str(et))
-  ##message(str(tbl))
-  ##message(str(pval))
-  ## assemble result dataframe
-  #df_res <- data.frame(
-  #  #name = rownames(count),
-  #  name = rownames(d),
-  #  log2FoldChange = as.numeric(log2FC_vec),
-  #  pvalue = as.numeric(pval),
-  #  baseMean = rowMeans(norm_counts)
-  #, stringsAsFactors = FALSE)
-  ##message(str(df_res))
+  dat$res <- df_res %>% rownames_to_column("name")
   
-
-  #df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
-
-  #dat$res <- df_res
-  #dat$norm_counts <- norm_counts_df
-  #dat$dds <- NULL
-
-  #message("do.deseq2 (edgeR fallback) done. Using BCV = ", BCV)
-  #dat
-  #message(str(dat))
+  dat$norm_counts <- norm_counts_df %>% rownames_to_column("name")
+  
+  dat$dds <- dds
+  
+  message("herehereherehereherehereherehere:")
+  message("Available resultsNames: ", paste(resultsNames(dds), collapse = ", "))
+  
+  res$padj < 0.01 & abs(res$log2FoldChange) > 0.5
+  dat
 }
 
-#do.deseq2 <- function(dat, BCV = 0.1) {
-#  if (!requireNamespace("edgeR", quietly = TRUE)) {
-#    stop("Please install package 'edgeR'")
-#  }
-#  
-#  count <- dat$count
-#  if(ncol(count) != 2) stop("do.deseq2 expects exactly 2 samples.")
-#  
-#  sample_names <- colnames(count)
-#  ctrl_name <- sample_names[1]
-#  treat_name <- sample_names[2]
-#
-#  # 1. 真 DGEList
-#  d <- edgeR::DGEList(counts = round(as.matrix(count)))
-#  d$samples$group <- factor(c(ctrl_name, treat_name), levels = c(ctrl_name, treat_name))
-#  
-#  # 2. 真真 (真 min.count=15)
-#  keep <- edgeR::filterByExpr(d, group = d$samples$group, min.count = 15)
-#  d <- d[keep, , keep.lib.sizes=FALSE]
-#  d <- edgeR::calcNormFactors(d, method = "TMM")
-#
-#  # 3. 真真?CPM (真真)
-#  norm_counts <- edgeR::cpm(d, normalized.lib.sizes = TRUE)
-#  norm_counts_df <- data.frame(norm_counts, check.names = FALSE) %>% 
-#    tibble::rownames_to_column(var = "name")
-#
-#  # 4. 真 predFC 真?Design Matrix
-#  # 真真?edgeR 真真真1真真真2真真
-#  design <- model.matrix(~d$samples$group) 
-#  
-#  # 5. 真真真 log2FC
-#  BCV <- as.numeric(BCV)
-#  # 真 predFC 真真真?0 真?#  lfc_matrix <- edgeR::predFC(d, design = design, dispersion = BCV^2, prior.count = 2)
-#  # 真真?log2FoldChange
-#  log2FC_val <- lfc_matrix[, 2]
-#
-#  # 6. 真真真 P ?#  et <- edgeR::exactTest(d, dispersion = BCV^2)
-#  tbl <- as.data.frame(edgeR::topTags(et, n = Inf, sort.by = "none"))
-#  
-#  # 7. 真真
-#  df_res <- data.frame(
-#    name = rownames(d),
-#    log2FoldChange = as.numeric(log2FC_val),
-#    pvalue = as.numeric(tbl$PValue),
-#    baseMean = rowMeans(norm_counts),
-#    stringsAsFactors = FALSE
-#  )
-#  df_res$padj <- stats::p.adjust(df_res$pvalue, method = "fdr")
-#
-#  dat$res <- df_res
-#  dat$norm_counts <- norm_counts_df
-#  dat$dds <- NULL 
 
-#  message("do.deseq2 (edgeR predFC) fixed. Using BCV = ", BCV)
-#  return(dat)
-#}
+do.lm <- function(dat) {
+  count <- dat$count
+  col_data <- dat$col_data
+  tidy.count <- count %>% 
+    cbind(name = rownames(count)) %>%
+    gather(sample, count, -name) %>% 
+      left_join(col_data %>% rownames_to_column("sample"), by = "sample")    
+  # TIP: values in a column must be atomic, can't have a vector
+  res <- tidy.count %>% group_by(name) %>% 
+    summarise(count = list(count), 
+              condition = list(condition)) %>%
+    group_by(name) %>%
+    mutate( lm = list(summary(lm(unlist(condition)~unlist(count)))),
+            baseMean = mean(unlist(count))) %>%
+    mutate( p.value = tryCatch({lm[[1]]$coefficients[2,4]}, error = function(e) NA),
+            b.value = tryCatch({lm[[1]]$coefficients[2,3]}, error = function(e) NA)) %>%
+    select(name, baseMean, b.value, p.value)
+  res$padj <- p.adjust(res$p.value, method="fdr")
+  res
+}
 
 do.summary <- function(dat) {
   calc.stat <- function(group) {
@@ -260,98 +182,19 @@ do.summary <- function(dat) {
 }
 
 
-draw.corr_name <- function(dat, top_n = 30) {
-  if (!requireNamespace("ggrepel", quietly = TRUE)) {
-    stop("Please install package 'ggrepel' for better label display.")
-  }
-  # dat$norm_counts: data.frame name, sample1, sample2
-  nc <- dat$norm_counts
-  # assume columns: name, <ctrl>, <treat>
-  sample_cols <- colnames(nc)[-1]
-  ctrl <- sample_cols[1]; treat <- sample_cols[2]
-  df <- nc %>% dplyr::rename(x = !!rlang::sym(ctrl), y = !!rlang::sym(treat)) %>%
-    left_join(dat$res %>% dplyr::select(name, log2FoldChange), by = "name") %>%
-    left_join(dat$annotation, by = "name") # ensure class/clade exist
-
-  # correlation stats
-  ct <- tryCatch(cor.test(df$x, df$y, method = "pearson"), error = function(e) NULL)
-  rtxt <- if(!is.null(ct)) sprintf("r = %.3f\np = %.2g", ct$estimate, ct$p.value) else "r = NA\np = NA"
-
-  # label topN by abs(log2FC)
-  lab <- df %>% dplyr::arrange(desc(abs(log2FoldChange))) %>% head(top_n)
-
-  p <- ggplot(df, aes(x = x, y = y, color = class)) +
-    geom_point(alpha = 0.7, size = 1.5) +
-    ggrepel::geom_text_repel(data = lab, aes(label = name), size = 2.5, max.overlaps = 30) +
-    theme_minimal() +
-    labs(x = ctrl, y = treat, title = paste0("Correlation (name-level)")) +
-    theme(legend.position = "bottom", text = element_text(size = 12)) +
-    annotate("text", x = Inf, y = -Inf, label = rtxt, hjust = 1.1, vjust = -0.1, size = 3)
-
-  p
-}
-
-draw.corr_log2fc <- function(dat, top_n = 30) {
-  if (!requireNamespace("ggrepel", quietly = TRUE)) {
-    stop("Please install package 'ggrepel'")
-  }
-  nc <- dat$norm_counts
-  sample_cols <- colnames(nc)[-1]
-  ctrl <- sample_cols[1]; treat <- sample_cols[2]
-
-  df <- nc %>%
-    dplyr::rename(raw_x = !!rlang::sym(ctrl),
-                  raw_y = !!rlang::sym(treat)) %>%
-    mutate(x = log2(raw_x + 1),
-           y = log2(raw_y + 1)) %>% 
-    left_join(dat$res %>% dplyr::select(name, log2FoldChange), by = "name") %>%
-    left_join(dat$annotation, by = "name")
-
-  # correlation on log scale
-  ct <- tryCatch(cor.test(df$x, df$y, method = "pearson"), error = function(e) NULL)
-  rtxt <- if(!is.null(ct)) sprintf("r = %.3f\np = %.2g", ct$estimate, ct$p.value) else "r = NA\np = NA"
-
-  lab <- df %>%
-    arrange(desc(abs(log2FoldChange))) %>%
-    head(top_n)
-
-  ggplot(df, aes(x = x, y = y, color = class)) +
-    geom_point(alpha = 0.7, size = 1.5) +
-    ggrepel::geom_text_repel(data = lab, aes(label = name), size = 2.5, max.overlaps = 30) +
-    theme_minimal() +
-    labs(x = paste0("log2(",ctrl,"+1)"),
-         y = paste0("log2(",treat,"+1)"),
-         title = "Correlation (log2 CPM)") +
-    theme(legend.position = "bottom", text = element_text(size = 12)) +
-    annotate("text", x = Inf, y = -Inf, label = rtxt,
-             hjust = 1.1, vjust = -0.1, size = 3)
-}
-
-# draw aggregated correlation: level = "clade" or "class"
-draw.corr_agg <- function(dat, level = c("clade","class")) {
-  level <- match.arg(level)
-  nc <- dat$norm_counts
-  sample_cols <- colnames(nc)[-1]
-  ctrl <- sample_cols[1]; treat <- sample_cols[2]
-  df <- nc %>% dplyr::rename(x = !!rlang::sym(ctrl), y = !!rlang::sym(treat)) %>%
-    left_join(dat$annotation, by = "name")
-
-  agg <- df %>% group_by_at(level) %>%
-    summarise(x = mean(x, na.rm = TRUE), y = mean(y, na.rm = TRUE)) %>% ungroup()
-
-  ct <- tryCatch(cor.test(agg$x, agg$y, method = "pearson"), error = function(e) NULL)
-  rtxt <- if(!is.null(ct)) sprintf("r = %.3f\np = %.2g", ct$estimate, ct$p.value) else "r = NA\np = NA"
-
-  p <- ggplot(agg, aes(x = x, y = y, color = .data[[level]])) +
-    geom_point(size = 2) +
-    ggrepel::geom_text_repel(aes(label = .data[[level]]), size = 3) +
-    theme_minimal() +
-    labs(x = ctrl, y = treat, title = paste0("Correlation (", level, "-level)")) +
-    theme(legend.position = "none", text = element_text(size = 12)) +
-    annotate("text", x = Inf, y = -Inf, label = rtxt, hjust = 1.1, vjust = -0.1, size = 3)
-
-  p
-}
+# a code to draw MA-plot
+#draw.MAplot <- function(dat) {
+#  return(dat$res %>%
+#    filter( !is.na(padj) ) %>%
+#    mutate( sig = ifelse(padj < 0.05, "DE", "NC" )) %>%
+#    ggplot( aes_string(x="baseMean", y=dat$y.name))+
+#    geom_hline(yintercept = 0, col = "red", alpha=0.5) +
+#    geom_point( aes(colour=sig) ) + 
+#    scale_colour_manual(values = c("red", "black"), limits = c("DE", "NC")) +
+#    scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+#                  labels = trans_format("log10", math_format(10^.x)) ) +
+#    theme(legend.position = "none", text = element_text(size = 18))  + theme_minimal())
+#}
 
 draw.MAplot <- function(dat) {
   if (!requireNamespace("ggrepel", quietly = TRUE)) {
@@ -363,7 +206,7 @@ draw.MAplot <- function(dat) {
     filter(!is.na(padj) & class != "Simple_repeat") %>%  
     mutate(
       #sig = ifelse(padj < 0.05 & abs(!!sym(dat$y.name)) > 0.5, "DE", "NC"),
-      sig = ifelse(padj < dat$pvalmax & abs(!!sym(dat$y.name)) > dat$log2fc_min, "DE", "NC"),  
+      sig = ifelse(padj < dat$pvalmax & abs(!!sym(dat$y.name)) > dat$log2fc_min, "DE", "NC"),
       group = ifelse(sig == "DE", as.character(clade), "Non-DE") 
     )
   
@@ -423,7 +266,7 @@ draw.pval_MAplot <- function(dat) {
     filter(!is.na(padj) & class != "Simple_repeat") %>%  
     mutate(
       #sig = ifelse(pvalue < 0.05 & abs(!!sym(dat$y.name)) > 0.5, "DE", "NC"),
-      sig = ifelse(pvalue < dat$pvalmax & abs(!!sym(dat$y.name)) > dat$log2fc_min, "DE", "NC"),  
+      sig = ifelse(pvalue < dat$pvalmax & abs(!!sym(dat$y.name)) > dat$log2fc_min, "DE", "NC"), 
       group = ifelse(sig == "DE", as.character(clade), "Non-DE") 
     )
   
@@ -569,12 +412,11 @@ draw.pdistplot <- function(dat) {
 
 
 
-SalmonTE <- function(count, samples, annotation, col_data,
-                     BCV,
+SalmonTE <- function(count, col_data, annotation,
+                     analysis,
+                     condition_level,
                      sheet.fmt = "csv", fig.fmt = "pdf", path = ".", log2fc_min = 0.5,
                      pvalmax = 0.05) {
-  #col_data <- col_data[samples, , drop = FALSE]
-  #count <- count[, samples, drop = FALSE]
   dat <- list(
     count = count, 
     col_data = col_data
@@ -582,11 +424,16 @@ SalmonTE <- function(count, samples, annotation, col_data,
   dat$log2fc_min <- log2fc_min
   dat$pvalmax    <- pvalmax
 
-  #if(!is.null(samples)) {
-  #  rownames(dat$col_data) <- factor(rownames(dat$col_data), level = samples)
-  #}
-  dat <- do.deseq2(dat,BCV, contrast_levels = samples)
-  dat$y.name <- "log2FoldChange"
+  if( analysis == "DE" ) {
+    if(!is.null(condition_level)) {
+      dat$col_data$condition <- factor(dat$col_data$condition, level = condition_level)
+    }
+    dat <- do.deseq2(dat)
+    dat$y.name <- "log2FoldChange"
+  } else {
+    dat$res <- do.lm(dat)
+    dat$y.name <- "b.value"
+  }
   dat$annotation <- annotation
   dat$sheet.fmt <- sheet.fmt
   dat$path <- path
@@ -601,15 +448,11 @@ SalmonTE <- function(count, samples, annotation, col_data,
   dat$summary$pdist.plot <- draw.pdistplot(dat) # gby added
   dat$summary$pval_volcano.plot <- draw.pval_volcanoplot(dat) #gby added
   dat$summary$pval_ma.plot <- draw.pval_MAplot(dat) # gby added
-  dat$summary$corr.name  <- draw.corr_name(dat, top_n = 30)
-  dat$summary$corr.log2fc  <- draw.corr_log2fc(dat, top_n = 30)
-  dat$summary$corr.clade <- draw.corr_agg(dat, level = "clade")
-  dat$summary$corr.class <- draw.corr_agg(dat, level = "class")
   dat
 }
 
-GenerateOutput <- function(dat, keep_samples) {
-  write.results(dat, keep_samples)
+GenerateOutput <- function(dat) {
+  write.results(dat)
   write.figures(dat)
   save(dat, file = file.path(dat$path, "data.Rdata"))
 }
@@ -617,26 +460,26 @@ GenerateOutput <- function(dat, keep_samples) {
 message("Step 2: Loading input data...")
 args <- commandArgs(T)
 
-#analysis <- args[5]
-samples <- NULL
-if(!is.na(args[5])) {
-  samples <- str_split(args[5], ",", simplify = T)
+analysis <- args[5]
+condition_level <- NULL
+if(analysis == "DE" && !is.na(args[6])) {
+  condition_level <- str_split(args[6], ",", simplify = T)
 }
-BCV = args[6]
 log2fc_min = as.numeric(args[7])
 pvalmax       = as.numeric(args[8])
-message(log2fc_min)
-message(pvalmax)
+
+#message(pvalmax)
+#message(log2fc_min)
 count <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE, header = TRUE)  #header = TRUE
 col_data <- read.csv(file.path(args[1], "condition.csv"), row.names = "SampleID")
-keep_samples <- rownames(col_data)[rownames(col_data) %in% samples] #filter wanted cols  # gby added
+keep_samples <- rownames(col_data)[col_data$condition %in% condition_level] #filter wanted cols  # gby added
 message(keep_samples)
-#count <- count[, keep_samples, drop = FALSE]  # gby added
-#col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
+count <- count[, keep_samples, drop = FALSE]  # gby added
+col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
 annotation <- read.csv(file.path(args[1], "clades.csv"))
-#message(sprintf("Step 3: Running the %s analysis...", analysis))
-dat <- SalmonTE(count, samples, annotation, col_data, BCV, args[2], args[3], args[4],log2fc_min, pvalmax)
+message(sprintf("Step 3: Running the %s analysis...", analysis))
+dat <- SalmonTE(count, col_data, annotation, analysis, condition_level, args[2], args[3], args[4],log2fc_min, pvalmax)
 
-message(sprintf("Step 4: Generating output..."))
-suppressMessages(GenerateOutput(dat, keep_samples = keep_samples))
+message(sprintf("Step 4: Generating output...", analysis))
+suppressMessages(GenerateOutput(dat))
 message(sprintf("Step 5: The statistical analysis has been completed. Please check '%s' directory to see the analysis result!", args[4]))

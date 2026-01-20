@@ -5,13 +5,14 @@ suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(WriteXLS))
 suppressPackageStartupMessages(library(stringr))  #Bo modified
 
-write.results <- function(dat) {
+write.results <- function(dat, keep_samples) {
   res <- dat$res
   summary <- dat$summary
   sheet.fmt <- dat$sheet.fmt
   path <- dat$path
   norm_counts_df <- dat$norm_counts # gby modified
-  norm_counts_res <- left_join(norm_counts_df, res, by = "name") # gby modified
+  norm_counts_filtered_cols <- norm_counts_df %>% select(name, all_of(keep_samples))
+  norm_counts_res <- left_join(norm_counts_filtered_cols, res, by = "name") # gby modified
   res_filtered <- res[res$class != "Simple_repeat", ] # gby modified0924
   norm_counts_res_filtered <- norm_counts_res[norm_counts_res$class != "Simple_repeat", ] # gby modified0924
   if(sheet.fmt == "tsv") {
@@ -66,7 +67,7 @@ write.figures <- function(dat) {
 #}
 
 # gby modified,for valid with chushai dispersion error
-do.deseq2 <- function(dat) {
+do.deseq2 <- function(dat, contrast_levels) {
   count <- dat$count
   col_data <- dat$col_data
   dds <- DESeqDataSetFromMatrix(countData = round(count),
@@ -109,7 +110,8 @@ do.deseq2 <- function(dat) {
     }
   )
   
-  res <- results(dds)
+  #res <- results(dds)
+  res <- results(dds, contrast = c("condition", contrast_levels[2], contrast_levels[1]))
   df_res <- data.frame(res)
   
   norm_counts <- counts(dds, normalized = TRUE)
@@ -426,9 +428,12 @@ SalmonTE <- function(count, col_data, annotation,
 
   if( analysis == "DE" ) {
     if(!is.null(condition_level)) {
-      dat$col_data$condition <- factor(dat$col_data$condition, level = condition_level)
+      levels_to_use <- as.character(condition_level)
+      #dat$col_data$condition <- factor(dat$col_data$condition)
+      #dat$col_data$condition <- factor(dat$col_data$condition, level = condition_level)
     }
-    dat <- do.deseq2(dat)
+    #dat <- do.deseq2(dat)
+    dat <- do.deseq2(dat, contrast_levels = levels_to_use)
     dat$y.name <- "log2FoldChange"
   } else {
     dat$res <- do.lm(dat)
@@ -451,8 +456,8 @@ SalmonTE <- function(count, col_data, annotation,
   dat
 }
 
-GenerateOutput <- function(dat) {
-  write.results(dat)
+GenerateOutput <- function(dat, keep_samples) {
+  write.results(dat, keep_samples)
   write.figures(dat)
   save(dat, file = file.path(dat$path, "data.Rdata"))
 }
@@ -474,12 +479,13 @@ count <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = 
 col_data <- read.csv(file.path(args[1], "condition.csv"), row.names = "SampleID")
 keep_samples <- rownames(col_data)[col_data$condition %in% condition_level] #filter wanted cols  # gby added
 message(keep_samples)
-count <- count[, keep_samples, drop = FALSE]  # gby added
-col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
+col_data$condition <- factor(col_data$condition)
+#count <- count[, keep_samples, drop = FALSE]  # gby added
+#col_data <- col_data[keep_samples, , drop = FALSE]  # gby added
 annotation <- read.csv(file.path(args[1], "clades.csv"))
 message(sprintf("Step 3: Running the %s analysis...", analysis))
 dat <- SalmonTE(count, col_data, annotation, analysis, condition_level, args[2], args[3], args[4],log2fc_min, pvalmax)
 
 message(sprintf("Step 4: Generating output...", analysis))
-suppressMessages(GenerateOutput(dat))
+suppressMessages(GenerateOutput(dat, keep_samples))
 message(sprintf("Step 5: The statistical analysis has been completed. Please check '%s' directory to see the analysis result!", args[4]))
