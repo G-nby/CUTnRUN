@@ -295,7 +295,7 @@ conda activate TEsalmon
 使用如下命令（修改参数）进行处理。  
 `--inpath` 处填写数据所处的大文件夹，`--outpath` 处填写希望数据输出的路径，`--ref_name` 处根据样本种类填写hs或mm，然后使用 `sbatch` 命令提交即可
 ```bash
-mk_expr --inpath=path/to/datadir --outpath=/path/to/outdir --num_threads=8 --ref_name=hs/mm
+TEsalmon2 mk_expr --inpath=path/to/datadir --outpath=/path/to/outdir --num_threads=8 --ref_name=hs/mm
 ```
 处理完成后，在输出文件夹中找到 `conditions.csv` 文件，根据样本分组在`condition`列填写分组信息（名称自定义，同组样本填写相同字段）
 - 有重复
