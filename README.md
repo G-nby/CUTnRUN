@@ -66,17 +66,18 @@ conda activate TEsalmon2
 ```
 - raw data
 每个样本数据位于一个小文件夹中，使用 `./TEsalmon2/scripts/quanttest.slurm` 进行处理（复制到自己的文件夹中，修改参数）。  
-文件最后填写输入数据文件夹（包含所有样本所在小文件夹的大文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm，然后使用 `sbatch` 命令提交即可
+文件最后填写输入数据文件夹（包含所有样本所在小文件夹的大文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm**或mmdfam**，然后使用 `sbatch` 命令提交即可
 ```bash
 sbatch my_quanttest.slurm
 ```
 - clean data
 所有clean数据（fq或gz）放于同一个文件夹中
 使用 `./TEsalmon2/scripts/quantcleantest.slurm`进行处理（复制到自己的文件夹中，修改参数）。  
-文件最后（无参数标记的输入）填写输入数据文件夹（包含所有样本的文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm，然后使用 `sbatch` 命令提交即可
+文件最后（无参数标记的输入）填写输入数据文件夹（包含所有样本的文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm**或mmdfam**，然后使用 `sbatch` 命令提交即可
 ```bash
 sbatch quantcleantest.slurm
 ```
+**注：新增mmdfam作为新版本鼠TE参考，可与mm结果结合参考**  
 处理完成后，在输出文件夹中找到 `conditions.csv` 文件，根据样本分组在`condition`列填写分组信息（名称自定义，同组样本填写相同字段）
 - 有重复
 使用 `./TEsalmon2/scripts/test1115.slurm` 进行处理（复制到自己的文件夹中，修改参数）。  
@@ -240,17 +241,18 @@ conda activate TEsalmon
 ```bash
 TEsalmon --reference hs/mm --outpath "/path/to/outputdir" "path/to/datadir"
 ```
-最后的参数填写输入数据文件夹（包含所有样本所在小文件夹的大文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm，然后提交即可
+最后的参数填写输入数据文件夹（包含所有样本所在小文件夹的大文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm**或mmdfam**，然后提交即可
 - clean data
 所有clean数据（fq或gz）放于同一个文件夹中
 使用如下命令进行处理，根据自己需求修改参数。  
-文件最后（无参数标记的输入）填写输入数据文件夹（包含所有样本的文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm，然后使用 `sbatch` 命令提交即可
+文件最后（无参数标记的输入）填写输入数据文件夹（包含所有样本的文件夹），`--outpath` 处填写希望结果输出的路径，`--reference` 处根据样本种类填写hs或mm**或mmdfam**，然后使用 `sbatch` 命令提交即可
 ```bash
 TEsalmon2 quant \
         --reference=hs/mm \
         --outpath=/path/to/outputdir --num_threads=8 \
         path/to/datadir --exprtype count
 ```
+**注：新增mmdfam作为新版本鼠TE参考，可与mm结果结合参考**   
 处理完成后，在输出文件夹中找到 `conditions.csv` 文件，根据样本分组在`condition`列填写分组信息（名称自定义，同组样本填写相同字段）
 - 有重复
 使用下方命令进行处理，根据自己需求修改参数。  
