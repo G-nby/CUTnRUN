@@ -215,7 +215,7 @@ SPIKEIN_2
 ### zhaolabCUTRUN count&draw
 运行以下命令激活环境
 ```bash
-conda activate TEsalmon2
+conda activate TEsalmon
 ```
 由于参数较多，可使用如下命令复制脚本到目标文件夹使用。
 ```bash
