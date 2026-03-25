@@ -191,6 +191,7 @@ sbatch my_dump.slurm
   - [pca](#zhaolabpca)
   - [pcaVST](#zhaolabpcavst)
   - [dump](#zhaolabdump)
+  - [CHIP_PW](#zhaolabchip_pw)
  
 ## zhaolabCUTRUN
 ### zhaolabCUTRUN 基本pipeline用法（common/ecoli）
@@ -377,4 +378,10 @@ PCAVST <input_file>
 ```bash
 DUMP <SRR文件夹所在路径> <输出路径>
 ```
+### zhaolabCHIP_PW
+任意环境，使用如下命令提交
+```bash
+CHIP_PW <count_draw输出intermediate文件夹路径> [输出路径]
+```
+其中输出路径可以不输入，不输入则结果默认输出到输入文件夹中。目前该功能仅有**hs**的通路富集，mm后续将更新
 
