@@ -48,6 +48,7 @@ source ~/Acluster.sh
 ```
 脚本位于`./CUTRUN/count_draw` 文件夹中。将 `count_draw.slurm` 复制到自己需要的地方，cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。**建议命名法为 `xx_clean.bam`**  
 bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。   
+⚠️ bam文件命名规范：本流程通过去除文件名末尾的 _clean.bam 来识别样本名（如 2OC1_clean.bam → 样本名 2OC1）。若使用软链接将bam文件归入同一文件夹（例如按不同IgG分组单独分析），软链接文件名必须保留 _clean.bam 后缀，IgG对照样本同理（如 ctrl1IgG_clean.bam）。SAMPLES_FOR_FILTERING 和 SAMPLES_FOR_GENE_BOXPLOT 中填写的样本名应与去除 _clean.bam 后缀后的名称一致。  
 `TE_classes_of_interest` 参数必填，`TE_repname_for_boxplot_and_heatmap` 参数选填（填则heatmap和boxplot的repname层级仅画这些TE，不填则画符合 `TE_classes_of_interest` 要求的所有repname，有可能数量较多看不清）。  
 根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
 ```bash
@@ -223,7 +224,9 @@ conda activate TEsalmon
 cp /opt/cutrun/gbyscripts/count_draw/count_draw.slurm .
 ```
 cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。**建议命名法为 `xx_clean.bam`**。  
-bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
+bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。  
+⚠️ bam文件命名规范：本流程通过去除文件名末尾的 `_clean.bam` 来识别样本名（如 2OC1_clean.bam → 样本名 2OC1）。若使用软链接将bam文件归入同一文件夹（例如按不同IgG分组单独分析），软链接文件名必须保留 `_clean.bam` 后缀，IgG对照样本同理（如 ctrl1IgG_clean.bam）。`SAMPLES_FOR_FILTERING` 和 `SAMPLES_FOR_GENE_BOXPLOT` 中填写的样本名应与去除 `_clean.bam` 后缀后的名称一致。  
+根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
 ```bash
 bash my_count_draw.slurm
 ```
