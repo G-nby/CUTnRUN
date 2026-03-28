@@ -393,5 +393,6 @@ CHIP_PW <count_draw输出intermediate文件夹路径> [输出路径]
 ```bash
 CHIP_PW_cor <count_draw输出intermediate文件夹路径> <threshold> [输出路径]
 ```
-其中输出路径可以不输入，不输入则结果默认输出到输入文件夹中。目前该功能仅有**hs**的通路富集，mm后续将更新。
+其中输出路径可以不输入，不输入则结果默认输出到输入文件夹中。目前该功能仅有**hs**的通路富集，mm后续将更新。  
+由于本功能对基因进行了threshold筛选，gsea结果仅供参考。以GO为准较好。
 
