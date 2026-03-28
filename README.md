@@ -193,6 +193,7 @@ sbatch my_dump.slurm
   - [pcaVST](#zhaolabpcavst)
   - [dump](#zhaolabdump)
   - [CHIP_PW](#zhaolabchip_pw)
+  - [CHIP_PW_cor](#zhaolabchip_pw_cor)
  
 ## zhaolabCUTRUN
 ### zhaolabCUTRUN 基本pipeline用法（common/ecoli）
