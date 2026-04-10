@@ -46,14 +46,26 @@ python 2.spikeinscale
 conda activate TEsalmon2
 source ~/Acluster.sh
 ```
-脚本位于`./CUTRUN/count_draw` 文件夹中。将 `count_draw.slurm` 复制到自己需要的地方，cutrun处理过的bamfile放在一个文件夹中，填写到bamdir参数处。**建议命名法为 `xx_clean.bam`**  
-bam文件夹中需要有一个igg样本（结尾样本名结尾为IgG），用于生成 `lfc_over_igg` 值。参数中不用填写igg样本名称。   
-⚠️ bam文件命名规范：本流程通过去除文件名末尾的 _clean.bam 来识别样本名（如 2OC1_clean.bam → 样本名 2OC1）。若使用软链接将bam文件归入同一文件夹（例如按不同IgG分组单独分析），软链接文件名必须保留 _clean.bam 后缀，IgG对照样本同理（如 ctrl1IgG_clean.bam）。SAMPLES_FOR_FILTERING 和 SAMPLES_FOR_GENE_BOXPLOT 中填写的样本名应与去除 _clean.bam 后缀后的名称一致。  
-`TE_classes_of_interest` 参数必填，`TE_repname_for_boxplot_and_heatmap` 参数选填（填则heatmap和boxplot的repname层级仅画这些TE，不填则画符合 `TE_classes_of_interest` 要求的所有repname，有可能数量较多看不清）。  
-根据自己的样本和其他需要修改 `count_draw.slurm` 中的参数，然后运行如下命令进行提交
-```bash
-sbatch my_count_draw.slurm
-```
+- 单个igg
+适用于所有样本共用同一个 IgG 对照的情况。将 `count_draw.slurm` 复制到工作目录并修改参数：  
+
+* **数据准备**：将所有处理好的 BAM 文件放入同一文件夹。BAM 文件必须以 `_clean.bam` 结尾（例如 `2OC1_clean.bam`）。
+    * **IgG 要求**：文件夹内必须包含一个以 `IgG_clean.bam` 结尾的对照样本（如 `controlIgG_clean.bam`）。系统会自动识别并计算 Log2FC，无需手动指定 IgG 名称。
+* **参数配置**：在脚本中填写 `bam_dir` 路径。
+    * **样本命名**：流程会自动去除 `_clean.bam` 后缀。例如 `2OC1_clean.bam` 识别为 `2OC1`。配置 `SAMPLES_FOR_FILTERING` 或 `SAMPLES_FOR_GENE_BOXPLOT` 时请直接使用识别后的名称。
+* **TE 配置**：`TE_classes_of_interest` 为必填项。若不希望 repname 层级的图表过于杂乱，建议在 `TE_repname_for_boxplot_and_heatmap` 中填入感兴趣的特定 TE 名称。
+
+**运行命令**：`sbatch my_count_draw.slurm`  
+- 多个igg
+适用于样本需要对照不同 IgG 的情况（例如不同批次或不同细胞系）。将 `count_draw_multiIgG.slurm` 复制到工作目录并修改参数：  
+
+* **数据准备**：按 IgG 对照将 BAM 文件分开放入不同的文件夹。每个文件夹内都必须包含该批次对应的 IgG 样本。
+    * **多目录配置**：在 `BAM_GROUPS` 参数中使用 `自定义组名:路径` 格式。例如 `DIR2:/path/to/dir2`。
+* **参数配置**：需在 `SPECIFIC_PLOT_PAIRS` 中手动指定需要绘制 Correlation 图的样本对。
+    * **样本命名（关键）**：多批次模式会自动在样本名后拼接组名后缀。格式为 `[原名]_[自定义组名]`。例如：`DIR2` 文件夹下的 `MHDAC2_clean.bam` 在配置参数时应写为 `MHDAC2_DIR2`。
+* **排序与过滤**：`SAMPLES_FOR_GENE_BOXPLOT` 会严格按照你填写的样本顺序输出图表，并自动过滤掉未填写的样本。
+
+**运行命令**：`sbatch my_count_draw_multiIgG.slurm`  
 结果可在输出文件夹的 `result` 文件夹中查看。  
 参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
 
