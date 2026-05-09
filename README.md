@@ -223,7 +223,11 @@ common处理使用 `CUTRUN`或`CUTRUNgz` 命令即可
 评估ecoli污染使用 `CUTRUN_ecoli`或`CUTRUNgz_ecoli` 命令，用法相同
 ### zhaolabCUTRUN spikein
 每个样本单独一个文件夹。所有样本文件夹位于一个总文件夹中  
-先使用 `SPIKEIN_1`或 `SPIKEINgz_1` 对每个样本进行数据处理（用法同上），然后在总文件夹中，运行如下命令
+先使用 `SPIKEIN_1`或 `SPIKEINgz_1` 对每个样本进行数据处理（用法同上），  
+```bash
+SPIKEIN_1/SPIKEINgz_1 trim/notrim ensembl_hg38/ensembl_mm10
+```
+然后在总文件夹中，运行如下命令
 ```bash
 SPIKEIN_2
 ```
