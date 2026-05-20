@@ -254,7 +254,7 @@ conda activate TEsalmon
     * **样本命名**：流程会自动去除 `_clean.bam` 后缀。例如 `2OC1_clean.bam` 识别为 `2OC1`。配置 `SAMPLES_FOR_FILTERING` 或 `SAMPLES_FOR_GENE_BOXPLOT` 时请直接使用识别后的名称。
   * **TE 配置**：`TE_classes_of_interest` 为必填项。若不希望 repname 层级的图表过于杂乱，建议在 `TE_repname_for_boxplot_and_heatmap` 中填入感兴趣的特定 TE 名称。
 
-  **运行命令**：`sbatch my_count_draw.slurm`  
+  **运行命令**：`bash my_count_draw.slurm`  
 - 多个igg  
   由于参数较多，可使用如下命令复制脚本到目标文件夹使用。
   ```bash
@@ -268,7 +268,12 @@ conda activate TEsalmon
     * **样本命名（关键）**：多批次模式会自动在样本名后拼接组名后缀。格式为 `[原名]_[自定义组名]`。例如：`DIR2` 文件夹下的 `MHDAC2_clean.bam` 在配置参数时应写为 `MHDAC2_DIR2`。
   * **排序与过滤**：`SAMPLES_FOR_GENE_BOXPLOT` 会严格按照你填写的样本顺序输出图表，并自动过滤掉未填写的样本。
 
-  **运行命令**：`sbatch my_count_draw_multiIgG.slurm`   
+  **运行命令**：`bash my_count_draw_multiIgG.slurm`   
+
+- 自定义count范围  
+适用于希望自定义做featurecount范围的情况。将 `0507H3panAC_new_count_draw_multiIgG(1).slurm` 复制到工作目录并修改参数，填写 `FROM_FILE` 字段  
+
+  **运行命令**：`bash my_0507H3panAC_new_count_draw_multiIgG(1).slurm`
 
 结果可在输出文件夹的 `result` 文件夹中查看。  
 参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
