@@ -66,6 +66,11 @@ source ~/Acluster.sh
   * **排序与过滤**：`SAMPLES_FOR_GENE_BOXPLOT` 会严格按照你填写的样本顺序输出图表，并自动过滤掉未填写的样本。
 
   **运行命令**：`sbatch my_count_draw_multiIgG.slurm`
+  
+- 自定义count范围  
+适用于希望自定义做featurecount范围的情况。将 `0507H3panAC_new_count_draw_multiIgG(1).slurm` 复制到工作目录并修改参数，填写 `FROM_FILE` 字段  
+
+  **运行命令**：`sbatch my_0507H3panAC_new_count_draw_multiIgG(1).slurm`
 
 结果可在输出文件夹的 `result` 文件夹中查看。  
 参考基因组 `hg38` 和 `mm39` 和 `mm10` 参考基因组可使用。
